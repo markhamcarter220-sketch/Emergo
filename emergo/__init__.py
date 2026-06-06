@@ -46,6 +46,20 @@ from emergo.executor import (
     failing_task_runner,
 )
 from emergo.planner import Planner, SequentialPlanner
+from emergo.diagnostics import (
+    KernelDiagnostics,
+    IterationRecord,
+    DetectorResult,
+    run_health_check,
+    detect_authority_collapse,
+    detect_topology_lock_in,
+    detect_phi_gaming,
+    detect_speculative_cascades,
+    detect_lux_bottleneck,
+    detect_clique_formation,
+    detect_credit_assignment_ambiguity,
+    detect_emergent_conservatism,
+)
 
 __all__ = [
     # types
@@ -62,4 +76,9 @@ __all__ = [
     "mock_task_runner", "failing_task_runner",
     # planner
     "Planner", "SequentialPlanner",
+    # diagnostics
+    "KernelDiagnostics", "IterationRecord", "DetectorResult", "run_health_check",
+    "detect_authority_collapse", "detect_topology_lock_in", "detect_phi_gaming",
+    "detect_speculative_cascades", "detect_lux_bottleneck", "detect_clique_formation",
+    "detect_credit_assignment_ambiguity", "detect_emergent_conservatism",
 ]

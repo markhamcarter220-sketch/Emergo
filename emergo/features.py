@@ -11,11 +11,16 @@ import numpy as np
 from emergo.types import CoordinationEvent, Graph
 
 _EVENT_TYPE_INDEX: dict[str, int] = {
+    # Graph-mutation CEs (handled by ce_execute)
     "add_edge": 0,
     "remove_edge": 1,
     "update_capabilities": 2,
     "add_agent": 3,
     "remove_agent": 4,
+    # Execution-layer CEs (handled by Executor; included for φ-space encoding)
+    "execute_task": 5,
+    "decompose_goal": 6,
+    "delegate": 7,
 }
 
 

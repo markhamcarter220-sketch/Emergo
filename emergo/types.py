@@ -1,6 +1,7 @@
 """Core immutable data structures for the Emergo Kernel state machine.
 
 State = (G_t, φ_t, A_t, E_t) — the only mutable state; all operations are pure functions.
+Task and Goal are execution-layer types defined here to avoid circular imports.
 """
 from __future__ import annotations
 
@@ -152,3 +153,42 @@ class Errors:
 # The complete mutable state of the system.  All four components are written
 # atomically by each operation; no shared mutable sub-state exists.
 State = Tuple[Graph, PhiMap, Authority, List[Errors]]
+
+
+# ---------------------------------------------------------------------------
+# Execution-layer types (used by Executor and Planner)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Task:
+    """A unit of work to be executed by an agent through the Lux-authorized path.
+
+    INV-8: depth tracks recursion level; rejected when depth > Goal.max_depth.
+    INV-5: required_capability is verified by Lux before execution begins.
+    INV-6: resource_cost is pre-deducted by Lux; refunded on failure.
+    """
+
+    task_id: str
+    description: str
+    required_capability: str   # Lux capability name required to execute
+    initiating_agent: str      # agent ID proposing this task
+    resource_cost: float = 1.0
+    resource_type: str = "compute"
+    depth: int = 0             # recursion depth (for INV-8)
+    parent_task_id: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class Goal:
+    """High-level goal decomposed by the Planner into Tasks.
+
+    resource_budget caps total resource spend across all tasks.
+    max_depth enforces INV-8 for the decomposition tree.
+    """
+
+    goal_id: str
+    description: str
+    required_capability: str
+    initiating_agent: str
+    resource_budget: float = 10.0
+    max_depth: int = 5

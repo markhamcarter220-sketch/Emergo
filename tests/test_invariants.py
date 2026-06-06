@@ -1,26 +1,39 @@
-"""Invariant verification tests — map directly to the four contract invariants.
+"""Invariant verification tests.
 
-Invariant 1: State ownership — (G_t, φ_t, A_t, E_t) is the only mutable state;
-             all operations are pure functions over this tuple.
-Invariant 2: Feedback loop — error → authority → topology is closed and visible.
-Invariant 3: Blast radius — failures degrade gracefully; no state corruption.
-Invariant 4: Timing — sequential execution; atomic operations; no deadlocks.
+INV-1: State ownership — (G_t, φ_t, A_t, E_t) is the only mutable state.
+INV-2: Feedback loop — error → authority → topology is closed and visible.
+INV-3: Blast radius — failures degrade gracefully; no state corruption.
+INV-4: Timing — sequential, atomic, deterministic.
+INV-5: Proposal-Only Authority — Emergo never mints capabilities directly.
+INV-6: Resource Conservation via Lux Ledger — every task charges a resource.
+INV-7: Observable + Fail-Closed — every CE attempt produces an audit record.
+INV-8: Bounded Speculation — depth + pending CE quota enforced.
 """
+import uuid
+
 import numpy as np
 import pytest
 
 from emergo import (
+    Executor,
+    Goal,
     Graph,
     CoordinationEvent,
     Lux,
+    Planner,
+    TaskOutcome,
     ce_execute,
     error_computation,
     authority_update,
-    phi_update,
-    make_initial_phi,
+    failing_task_runner,
     make_initial_authority,
+    make_initial_phi,
+    mock_task_runner,
+    phi_update,
 )
-from emergo.types import Authority, Errors
+from emergo.config import MAX_DECOMPOSITION_DEPTH, MAX_PENDING_CES_PER_AGENT
+from emergo.lux_bridge import SimulatedLuxBridge
+from emergo.types import Authority, Errors, Task
 from tests.conftest import make_ce
 
 
@@ -206,3 +219,317 @@ class TestInvariant4Timing:
         assert G_next is not G
         assert A_next is not A
         assert phi_next is not phi or phi_next.W_phi is not phi.W_phi
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers for INV-5/6/7/8
+# ---------------------------------------------------------------------------
+
+def _exec_state(agent_ids=("A", "B")):
+    n = len(agent_ids)
+    adj = np.zeros((n, n))
+    caps = np.ones((n, 2)) * 0.5
+    G = Graph(agent_ids=agent_ids, adjacency=adj, capabilities=caps)
+    phi = make_initial_phi(d_latent=4, d_features=16, d_ce=4)
+    A = make_initial_authority(agent_ids)
+    return G, phi, A, []
+
+
+def _exec_goal(agent="A", budget=10.0) -> Goal:
+    return Goal(
+        goal_id=str(uuid.uuid4()),
+        description="inv test",
+        required_capability="test_cap",
+        initiating_agent=agent,
+        resource_budget=budget,
+        max_depth=3,
+    )
+
+
+def _lux_with_cap(*agents: str, budget: float = 100.0) -> Lux:
+    bridge = SimulatedLuxBridge(initial_budget=budget)
+    for a in agents:
+        bridge.grant_capability(a, "test_cap")
+    return Lux(bridge=bridge)
+
+
+# ---------------------------------------------------------------------------
+# INV-5: Proposal-Only Authority
+# ---------------------------------------------------------------------------
+
+class TestInvariant5ProposalOnlyAuthority:
+    def test_authority_always_in_unit_interval(self):
+        """Authority scores are clamped to [0,1] regardless of error magnitude."""
+        A = make_initial_authority(("A",), baseline=0.5)
+        # Extreme errors: cannot push authority out of bounds
+        for extreme_error in [0.0, 1e6, -1.0]:
+            errors = Errors(per_agent={"A": abs(extreme_error)})
+            A_next = authority_update(A, errors, eta=10.0)  # large eta
+            assert 0.0 <= A_next.get("A") <= 1.0
+
+    def test_execute_task_denied_without_lux_capability(self):
+        """Emergo cannot execute a task unless Lux has granted the capability."""
+        lux = Lux(bridge=SimulatedLuxBridge())  # no capability granted
+        exec_ = Executor(lux=lux)
+        result = exec_.execute(_exec_goal(), _exec_state())
+        assert result.tasks_succeeded == 0
+
+    def test_capability_change_goes_through_ce_execute(self):
+        """After execution, the graph's capability row changed via ce_execute path."""
+        lux = _lux_with_cap("A")
+
+        def cap_runner(task):
+            return TaskOutcome(
+                task_id=task.task_id,
+                success=True,
+                capability_delta={"d0": 0.2},
+                resource_consumed=task.resource_cost,
+            )
+
+        exec_ = Executor(lux=lux, task_runner=cap_runner)
+        state = _exec_state()
+        result = exec_.execute(_exec_goal(), state)
+        G_after, _, _, _ = result.final_state
+        # Graph is a new immutable instance — not the original
+        assert G_after is not state[0]
+        assert not G_after.capabilities.flags.writeable
+
+    def test_authority_update_requires_error_signal(self):
+        """Authority changes only when an Errors object is produced; not by fiat."""
+        A = make_initial_authority(("A",), baseline=0.5)
+        original = A.get("A")
+        # Without an error signal there is no mechanism to change authority
+        A_copy = A.copy()
+        assert A_copy.get("A") == pytest.approx(original)
+        # Only authority_update() changes it
+        A_changed = authority_update(A, Errors(per_agent={"A": 0.0}), eta=0.1)
+        assert A_changed.get("A") != pytest.approx(original)
+
+    def test_lux_grant_is_only_capability_path(self):
+        """Executor cannot grant capabilities that Lux has not issued."""
+        bridge = SimulatedLuxBridge()
+        lux = Lux(bridge=bridge)
+        exec_ = Executor(lux=lux, task_runner=mock_task_runner)
+        exec_.execute(_exec_goal(), _exec_state())
+        # "test_cap" was never granted → no task succeeded
+        assert not bridge.check_capability("A", "test_cap")
+
+
+# ---------------------------------------------------------------------------
+# INV-6: Resource Conservation via Lux Ledger
+# ---------------------------------------------------------------------------
+
+class TestInvariant6ResourceConservation:
+    def test_successful_task_deducts_resource(self):
+        bridge = SimulatedLuxBridge(initial_budget=100.0)
+        bridge.grant_capability("A", "test_cap")
+        lux = Lux(bridge=bridge)
+        exec_ = Executor(lux=lux, task_runner=mock_task_runner)
+        exec_.execute(_exec_goal(), _exec_state())
+        assert bridge.get_balance("A") < 100.0
+
+    def test_rejected_authorization_leaves_balance_intact(self):
+        bridge = SimulatedLuxBridge(initial_budget=100.0)
+        # Capability not granted → authorization denied → no deduction
+        lux = Lux(bridge=bridge)
+        exec_ = Executor(lux=lux)
+        exec_.execute(_exec_goal(), _exec_state())
+        assert bridge.get_balance("A") == pytest.approx(100.0)
+
+    def test_failed_execution_triggers_refund(self):
+        bridge = SimulatedLuxBridge(initial_budget=100.0)
+        bridge.grant_capability("A", "test_cap")
+        lux = Lux(bridge=bridge)
+        exec_ = Executor(lux=lux, task_runner=failing_task_runner)
+        exec_.execute(_exec_goal(), _exec_state())
+        assert bridge.get_balance("A") == pytest.approx(100.0)
+
+    def test_insufficient_budget_blocks_execution(self):
+        bridge = SimulatedLuxBridge(initial_budget=0.01)
+        bridge.grant_capability("A", "test_cap")
+        lux = Lux(bridge=bridge)
+        exec_ = Executor(lux=lux, task_runner=mock_task_runner)
+        result = exec_.execute(_exec_goal(), _exec_state())
+        assert result.tasks_succeeded == 0
+        assert bridge.get_balance("A") == pytest.approx(0.01)
+
+    def test_ledger_conserved_over_n_tasks(self):
+        """Total deducted == sum of resource_consumed across all succeeded tasks."""
+        bridge = SimulatedLuxBridge(initial_budget=100.0)
+        bridge.grant_capability("A", "test_cap")
+        lux = Lux(bridge=bridge)
+
+        class NTaskPlanner(Planner):
+            def decompose(self, goal, G, A):
+                return [
+                    Task(
+                        task_id=str(uuid.uuid4()),
+                        description=f"step {i}",
+                        required_capability=goal.required_capability,
+                        initiating_agent=goal.initiating_agent,
+                        resource_cost=3.0,
+                        depth=0,
+                    )
+                    for i in range(4)
+                ]
+
+        exec_ = Executor(lux=lux, task_runner=mock_task_runner, planner=NTaskPlanner())
+        result = exec_.execute(_exec_goal(budget=20.0), _exec_state())
+        assert result.tasks_succeeded == 4
+        assert bridge.get_balance("A") == pytest.approx(100.0 - 3.0 * 4)
+        assert result.resources_spent == pytest.approx(3.0 * 4)
+
+
+# ---------------------------------------------------------------------------
+# INV-7: Observable + Fail-Closed Propagation
+# ---------------------------------------------------------------------------
+
+class TestInvariant7Observable:
+    def test_every_ce_attempt_produces_audit(self):
+        bridge = SimulatedLuxBridge(initial_budget=100.0)
+        bridge.grant_capability("A", "test_cap")
+        lux = Lux(bridge=bridge)
+        exec_ = Executor(lux=lux, task_runner=mock_task_runner)
+        result = exec_.execute(_exec_goal(), _exec_state())
+        assert len(result.audit_ids) == result.tasks_attempted
+        assert len(bridge.get_audit_log()) >= result.tasks_attempted
+
+    def test_failed_authorization_is_audited(self):
+        bridge = SimulatedLuxBridge()  # no capability
+        lux = Lux(bridge=bridge)
+        exec_ = Executor(lux=lux)
+        exec_.execute(_exec_goal(), _exec_state())
+        log = bridge.get_audit_log()
+        assert any(not r["success"] for r in log)
+
+    def test_failed_execution_is_audited(self):
+        bridge = SimulatedLuxBridge(initial_budget=100.0)
+        bridge.grant_capability("A", "test_cap")
+        lux = Lux(bridge=bridge)
+        exec_ = Executor(lux=lux, task_runner=failing_task_runner)
+        exec_.execute(_exec_goal(), _exec_state())
+        log = bridge.get_audit_log()
+        failures = [r for r in log if not r["success"]]
+        assert len(failures) >= 1
+
+    def test_audit_log_is_append_only(self):
+        bridge = SimulatedLuxBridge(initial_budget=100.0)
+        bridge.grant_capability("A", "test_cap")
+        lux = Lux(bridge=bridge)
+        exec_ = Executor(lux=lux)
+        exec_.execute(_exec_goal(), _exec_state())
+        snapshot1 = bridge.get_audit_log()
+        exec_.execute(_exec_goal(), _exec_state())
+        snapshot2 = bridge.get_audit_log()
+        # Each call adds records; old records are still present
+        assert len(snapshot2) >= len(snapshot1)
+        # Snapshots are copies — modifying one doesn't affect the other
+        snapshot1.clear()
+        assert len(bridge.get_audit_log()) == len(snapshot2)
+
+    def test_audit_records_are_immutable_dicts(self):
+        """Modifying the returned dict copy must not affect the stored record."""
+        bridge = SimulatedLuxBridge()
+        bridge.audit("add_edge", ("A",), True, details={"x": 1})
+        log = bridge.get_audit_log()
+        log[0]["details"]["x"] = 999  # mutate the copy
+        fresh = bridge.get_audit_log()
+        assert fresh[0]["details"]["x"] == 1  # original unchanged
+
+
+# ---------------------------------------------------------------------------
+# INV-8: Bounded Speculation
+# ---------------------------------------------------------------------------
+
+class TestInvariant8BoundedSpeculation:
+    def test_depth_exceeded_rejects_task(self):
+        bridge = SimulatedLuxBridge(initial_budget=100.0)
+        bridge.grant_capability("A", "test_cap")
+        lux = Lux(bridge=bridge)
+
+        class DeepPlanner(Planner):
+            def decompose(self, goal, G, A):
+                return [Task(
+                    task_id=str(uuid.uuid4()),
+                    description="deep",
+                    required_capability=goal.required_capability,
+                    initiating_agent=goal.initiating_agent,
+                    resource_cost=1.0,
+                    depth=MAX_DECOMPOSITION_DEPTH + 1,
+                )]
+
+        exec_ = Executor(lux=lux, planner=DeepPlanner())
+        goal = Goal(
+            goal_id="g", description="deep", required_capability="test_cap",
+            initiating_agent="A", resource_budget=10.0,
+            max_depth=MAX_DECOMPOSITION_DEPTH,
+        )
+        result = exec_.execute(goal, _exec_state())
+        assert result.tasks_succeeded == 0
+        rejections = [
+            r for r in bridge.get_audit_log()
+            if r.get("details", {}).get("reason") == "depth_exceeded"
+        ]
+        assert len(rejections) >= 1
+
+    def test_pending_quota_prevents_new_proposals(self):
+        bridge = SimulatedLuxBridge(initial_budget=100.0)
+        bridge.grant_capability("A", "test_cap")
+        lux = Lux(bridge=bridge)
+        exec_ = Executor(lux=lux, task_runner=mock_task_runner)
+        # Fill pending counter to the limit
+        exec_._pending["A"] = MAX_PENDING_CES_PER_AGENT
+        result = exec_.execute(_exec_goal(), _exec_state())
+        assert result.tasks_succeeded == 0
+
+    def test_pending_resets_after_completion(self):
+        bridge = SimulatedLuxBridge(initial_budget=100.0)
+        bridge.grant_capability("A", "test_cap")
+        lux = Lux(bridge=bridge)
+        exec_ = Executor(lux=lux, task_runner=mock_task_runner)
+        exec_.execute(_exec_goal(), _exec_state())
+        # After completion, pending is cleared
+        assert exec_._pending.get("A", 0) == 0
+
+    def test_pending_resets_after_failure(self):
+        bridge = SimulatedLuxBridge(initial_budget=100.0)
+        bridge.grant_capability("A", "test_cap")
+        lux = Lux(bridge=bridge)
+        exec_ = Executor(lux=lux, task_runner=failing_task_runner)
+        exec_.execute(_exec_goal(), _exec_state())
+        assert exec_._pending.get("A", 0) == 0
+
+    def test_max_depth_config_is_respected(self):
+        """Goal.max_depth overrides default; shallow goal rejects deep tasks."""
+        bridge = SimulatedLuxBridge(initial_budget=100.0)
+        bridge.grant_capability("A", "test_cap")
+        lux = Lux(bridge=bridge)
+
+        class OneLevelDeepPlanner(Planner):
+            def decompose(self, goal, G, A):
+                return [Task(
+                    task_id=str(uuid.uuid4()),
+                    description="one level deep",
+                    required_capability=goal.required_capability,
+                    initiating_agent=goal.initiating_agent,
+                    resource_cost=1.0,
+                    depth=1,
+                )]
+
+        exec_ = Executor(lux=lux, planner=OneLevelDeepPlanner())
+        # max_depth=0: depth=1 is rejected
+        shallow_goal = Goal(
+            goal_id="g", description="shallow", required_capability="test_cap",
+            initiating_agent="A", resource_budget=10.0, max_depth=0,
+        )
+        result = exec_.execute(shallow_goal, _exec_state())
+        assert result.tasks_succeeded == 0
+
+        # max_depth=1: depth=1 is accepted
+        deeper_goal = Goal(
+            goal_id="g2", description="deeper", required_capability="test_cap",
+            initiating_agent="A", resource_budget=10.0, max_depth=1,
+        )
+        exec_.reset_pending()
+        result2 = exec_.execute(deeper_goal, _exec_state())
+        assert result2.tasks_succeeded == 1

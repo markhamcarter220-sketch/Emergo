@@ -4,6 +4,13 @@ ce_execute(G_t, CE, lux, A_t) → (G_{t+1}, success, participants)
 
 Atomic and deterministic: either the full transformation is applied to produce
 G_{t+1}, or G_t is returned unchanged with success=False.  No partial writes.
+
+Boundary note: ce_execute handles GRAPH MUTATION CEs only:
+  add_edge, remove_edge, update_capabilities, add_agent, remove_agent
+
+Execution-layer CEs (execute_task, decompose_goal, delegate) are intentionally
+rejected here — they MUST go through Executor, which enforces INV-5/6/7/8.
+Routing them through ce_execute would bypass resource deduction and audit.
 """
 from __future__ import annotations
 
@@ -43,7 +50,17 @@ def ce_execute(
 # Internal transformations — each returns a fresh immutable Graph
 # ---------------------------------------------------------------------------
 
+# CE types that must go through Executor (not ce_execute).
+# Explicitly listed so violations produce a clear error, not a silent failure.
+_EXECUTOR_ONLY_TYPES = frozenset({"execute_task", "decompose_goal", "delegate"})
+
+
 def _apply(G: Graph, CE: CoordinationEvent, params: dict) -> Graph:
+    if CE.event_type in _EXECUTOR_ONLY_TYPES:
+        raise ValueError(
+            f"CE type {CE.event_type!r} must be handled by Executor.execute(), "
+            "not ce_execute(). Routing it here bypasses resource deduction and audit."
+        )
     dispatch = {
         "add_edge": _add_edge,
         "remove_edge": _remove_edge,

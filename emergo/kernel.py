@@ -17,6 +17,7 @@ from emergo.authority_update import authority_update
 from emergo.ce_execution import ce_execute
 from emergo.error_computation import error_computation
 from emergo.lux import Lux
+from emergo.observer import fire_observers
 from emergo.phi_update import phi_update
 from emergo.types import Authority, CoordinationEvent, Errors, Graph, PhiMap, State
 
@@ -64,6 +65,7 @@ def emergo_kernel(
     rng: Optional[np.random.Generator] = None,
     phi_update_interval: int = 10,
     collect_diagnostics: bool = False,
+    observers: Optional[List] = None,
 ) -> Union[Tuple[State, str], Tuple[State, str, "KernelDiagnostics"]]:
     """Run the fixed-point loop until convergence or max_iterations.
 
@@ -73,6 +75,10 @@ def emergo_kernel(
       3. ErrorComputation → per-agent errors
       4. AuthorityUpdate → A_{t+1}
       5. PhiUpdate (every phi_update_interval steps) → φ_{t+1}
+
+    Args:
+      observers: Optional list of KernelObserver objects (INV-10: read-only).
+                 Observer exceptions are caught and logged, never propagated.
 
     Returns:
       - (final_state, reason) when collect_diagnostics=False (default)
@@ -84,6 +90,7 @@ def emergo_kernel(
         lux = Lux()
     if rng is None:
         rng = np.random.default_rng(seed=0)
+    _observers: List = list(observers) if observers else []
 
     G_t, phi_t, A_t, E_history = initial_state
 
@@ -98,6 +105,9 @@ def emergo_kernel(
         diag_records: List[IterationRecord] = []
 
     for t in range(max_iterations):
+        # INV-10: fire observers before CE sampling (read-only snapshot)
+        fire_observers(_observers, "on_iteration_start", t, state)
+
         CE_t = _sample_next_ce(A_t, G_t, rng)
         if CE_t is None:
             continue  # degenerate graph; keep waiting
@@ -106,6 +116,7 @@ def emergo_kernel(
         G_next, success, _ = ce_execute(G_t, CE_t, lux, A_t)
         if not success:
             # CE rejected; state unchanged
+            fire_observers(_observers, "on_ce_result", t, CE_t, False, None)
             if collect_diagnostics:
                 edge_count = int(np.sum(G_t.adjacency > 0))
                 diag_records.append(IterationRecord(
@@ -139,6 +150,8 @@ def emergo_kernel(
         phi_loss_value: Optional[float] = None
         if (t % phi_update_interval == 0) and len(g_history) >= 2:
             phi_next, phi_loss_value = phi_update(phi_t, g_history, ce_history, E_next)
+            if phi_loss_value is not None:
+                fire_observers(_observers, "on_phi_updated", t, phi_loss_value)
         else:
             phi_next = phi_t
 
@@ -165,10 +178,14 @@ def emergo_kernel(
                 phi_loss=phi_loss_value,
             ))
 
+        # Fire observer after CE accepted (INV-10: errors is a value object, not mutable)
+        fire_observers(_observers, "on_ce_result", t, CE_t, True, errors)
+
         state = (G_next, phi_next, A_next, E_next)
         G_t, phi_t, A_t, E_history = state
 
         if _converged(E_history, threshold=convergence_threshold):
+            fire_observers(_observers, "on_kernel_done", "Converged", state, t + 1)
             if collect_diagnostics:
                 return state, "Converged", KernelDiagnostics(
                     records=diag_records,
@@ -176,6 +193,7 @@ def emergo_kernel(
                 )
             return state, "Converged"
 
+    fire_observers(_observers, "on_kernel_done", "Max iterations reached", state, max_iterations)
     if collect_diagnostics:
         return state, "Max iterations reached", KernelDiagnostics(
             records=diag_records,

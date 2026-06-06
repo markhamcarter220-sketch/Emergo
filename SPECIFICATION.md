@@ -186,7 +186,68 @@ When multiple agents submit proposals simultaneously through `MultiAgentCoordina
 - `phi_update` is NOT run inside the coordinator; it remains the kernel loop's
   responsibility (strict separation of concerns).
 
+### INV-10: Observer Isolation
+Observers attached to the kernel loop via the `observers` parameter are strictly
+read-only.  They receive snapshots of state data but cannot mutate kernel internals.
+
+- All observer callbacks are dispatched through `fire_observers()`.
+- Any exception raised inside an observer callback is caught, logged at `WARNING`
+  level, and **never re-raised**.  Observer failures have blast radius zero.
+- The kernel's fixed-point loop, state transitions, and convergence decision are
+  unaffected by observer behavior — correct or otherwise.
+
 ---
+
+## Observers (INV-10)
+
+`KernelObserver` is a `@runtime_checkable Protocol` with four hooks:
+
+```python
+class KernelObserver(Protocol):
+    def on_iteration_start(self, t: int, state: State) -> None: ...
+    def on_ce_result(self, t: int, ce: CoordinationEvent, accepted: bool, errors) -> None: ...
+    def on_phi_updated(self, t: int, loss: float) -> None: ...
+    def on_kernel_done(self, reason: str, state: State, n_iterations: int) -> None: ...
+```
+
+Two concrete implementations are provided:
+- `LoggingObserver` — writes iteration summaries to Python `logging`.
+- `HistoryObserver` — accumulates per-iteration metrics in-memory for post-hoc analysis.
+
+Attach observers to the kernel:
+
+```python
+from emergo import HistoryObserver, emergo_kernel
+
+obs = HistoryObserver()
+final_state, reason = emergo_kernel(initial_state, observers=[obs])
+print(obs.summary())
+```
+
+## Planner Hierarchy
+
+Three planners are provided, all satisfying INV-8 (depth=0 on all emitted tasks):
+
+| Class | Description |
+|---|---|
+| `Planner` | Base: single flat task per goal |
+| `SequentialPlanner` | Ordered list of steps; one task per step |
+| `DependencyPlanner` | Explicit DAG; tasks emitted in topological order |
+
+`DependencyPlanner` validates the DAG at construction time and raises `ValueError` on:
+duplicate task names, unknown dependency references, or dependency cycles.
+
+```python
+from emergo import DependencyPlanner
+
+planner = DependencyPlanner(steps=[
+    ("fetch",     "Retrieve source documents",  []),
+    ("extract",   "Extract key facts",          ["fetch"]),
+    ("summarize", "Write summary draft",        ["extract"]),
+])
+executor = Executor(lux=lux, planner=planner)
+result = executor.execute(goal, state)
+```
 
 ## Multi-Agent Coordination
 

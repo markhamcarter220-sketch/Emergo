@@ -113,6 +113,18 @@ class LuxError(Exception):
     """Raised when Lux is unavailable or returns an unexpected error."""
 
 
+class LuxConnectionError(LuxError):
+    """Raised when the Lux service cannot be reached."""
+
+
+class LuxTimeoutError(LuxError):
+    """Raised when a Lux operation exceeds the timeout threshold."""
+
+
+class LuxPermissionError(LuxError):
+    """Raised when an operation is denied due to permissions (not just authority)."""
+
+
 class SimulatedLuxBridge(LuxBridge):
     """In-memory Lux implementation for development and testing.
 
@@ -317,9 +329,14 @@ class RealLuxBridge(LuxBridge):
 
     Set EMERGO_LUX_MODE=real and ensure the lux package is installed.
     ALL operations are fail-closed: any exception → denied / False.
+
+    Retry logic: authorize_ce, check_capability, and deduct_resource each
+    retry up to max_retries times on transient errors before failing closed.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, max_retries: int = 3, retry_delay: float = 0.5) -> None:
+        self._max_retries = max_retries
+        self._retry_delay = retry_delay
         try:
             import lux as _lux  # type: ignore
             self._lux = _lux
@@ -329,29 +346,42 @@ class RealLuxBridge(LuxBridge):
                 "Install the 'lux' package or use EMERGO_LUX_MODE=simulated."
             ) from exc
 
+    def _retry(self, fn, *args, **kwargs):
+        """Call fn(*args, **kwargs) up to max_retries times; fail-closed on last failure."""
+        last_exc: Exception = RuntimeError("no attempts made")
+        for attempt in range(self._max_retries + 1):
+            try:
+                return fn(*args, **kwargs)
+            except Exception as exc:
+                last_exc = exc
+                if attempt < self._max_retries:
+                    time.sleep(self._retry_delay * (2 ** attempt))
+        raise last_exc
+
     def authorize_ce(self, CE, G, A, min_authority=0.1, reserve_resources=False) -> AuthResult:
         try:
-            return self._lux.authorize_ce(CE, G, A, min_authority, reserve_resources)
+            return self._retry(self._lux.authorize_ce, CE, G, A, min_authority, reserve_resources)
         except Exception as exc:
+            logger.warning("RealLuxBridge.authorize_ce failed (fail-closed): %s", exc)
             return AuthResult(False, f"Lux error: {exc}", False, 0.0)
 
     def check_capability(self, agent_id, capability) -> bool:
         try:
-            return bool(self._lux.check_capability(agent_id, capability))
+            return bool(self._retry(self._lux.check_capability, agent_id, capability))
         except Exception:
             return False
 
     def deduct_resource(self, agent_id, resource, amount) -> bool:
         try:
-            return bool(self._lux.deduct_resource(agent_id, resource, amount))
+            return bool(self._retry(self._lux.deduct_resource, agent_id, resource, amount))
         except Exception:
             return False
 
     def refund_resource(self, agent_id, resource, amount) -> None:
         try:
             self._lux.refund_resource(agent_id, resource, amount)
-        except Exception:
-            pass  # best-effort; audit record is written regardless
+        except Exception as exc:
+            logger.warning("RealLuxBridge.refund_resource failed (best-effort): %s", exc)
 
     def grant_capability(self, agent_id, capability) -> None:
         try:
@@ -373,3 +403,47 @@ def make_lux_bridge(mode: Optional[str] = None, **kwargs) -> LuxBridge:
     if effective_mode == "real":
         return RealLuxBridge()
     return SimulatedLuxBridge(**kwargs)
+
+
+def validate_bridge(bridge: LuxBridge) -> bool:
+    """Smoke-test a LuxBridge implementation for basic correctness.
+
+    Runs a minimal sequence of operations against a sentinel agent and checks
+    that the contract is upheld.  Returns True on success, raises LuxError on
+    any violation so callers can fail-fast at startup rather than mid-run.
+
+    Use this in integration tests or startup health checks to verify that a
+    RealLuxBridge actually talks to a live Lux service.
+    """
+    _AGENT = "__validate_probe__"
+    _CAP = "__validate_cap__"
+    _RESOURCE = "compute"
+    _AMOUNT = 0.01
+
+    # 1. Grant + check capability
+    try:
+        bridge.grant_capability(_AGENT, _CAP)
+    except Exception as exc:
+        raise LuxError(f"validate_bridge: grant_capability failed: {exc}") from exc
+
+    if not bridge.check_capability(_AGENT, _CAP):
+        raise LuxError("validate_bridge: check_capability returned False immediately after grant")
+
+    # 2. Deduct + refund resource (no-op amounts — just tests plumbing)
+    ok = bridge.deduct_resource(_AGENT, _RESOURCE, _AMOUNT)
+    if not ok:
+        raise LuxError("validate_bridge: deduct_resource denied on fresh agent")
+    bridge.refund_resource(_AGENT, _RESOURCE, _AMOUNT)
+
+    # 3. Audit round-trip
+    try:
+        audit_id = bridge.audit("validate_probe", (_AGENT,), True, {"probe": True}, 0.0)
+        if not isinstance(audit_id, str) or not audit_id:
+            raise LuxError("validate_bridge: audit returned empty or non-string id")
+    except LuxError:
+        raise
+    except Exception as exc:
+        raise LuxError(f"validate_bridge: audit raised unexpected exception: {exc}") from exc
+
+    logger.info("validate_bridge: all checks passed for %s", type(bridge).__name__)
+    return True

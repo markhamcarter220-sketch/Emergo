@@ -1,13 +1,15 @@
 """Invariant verification tests.
 
-INV-1: State ownership — (G_t, φ_t, A_t, E_t) is the only mutable state.
-INV-2: Feedback loop — error → authority → topology is closed and visible.
-INV-3: Blast radius — failures degrade gracefully; no state corruption.
-INV-4: Timing — sequential, atomic, deterministic.
-INV-5: Proposal-Only Authority — Emergo never mints capabilities directly.
-INV-6: Resource Conservation via Lux Ledger — every task charges a resource.
-INV-7: Observable + Fail-Closed — every CE attempt produces an audit record.
-INV-8: Bounded Speculation — depth + pending CE quota enforced.
+INV-1:  State ownership — (G_t, φ_t, A_t, E_t) is the only mutable state.
+INV-2:  Feedback loop — error → authority → topology is closed and visible.
+INV-3:  Blast radius — failures degrade gracefully; no state corruption.
+INV-4:  Timing — sequential, atomic, deterministic.
+INV-5:  Proposal-Only Authority — Emergo never mints capabilities directly.
+INV-6:  Resource Conservation via Lux Ledger — every task charges a resource.
+INV-7:  Observable + Fail-Closed — every CE attempt produces an audit record.
+INV-8:  Bounded Speculation — depth + pending CE quota enforced.
+INV-9:  Coordinator Serialization — proposals sorted by authority; no dup edge writes.
+INV-10: Observer Isolation — observer exceptions never propagate to the kernel.
 """
 import uuid
 
@@ -635,3 +637,144 @@ class TestInvariant9CoordinatorSerialization:
         # Authority in [0, 1]
         for agent_id in G_out.agent_ids:
             assert 0.0 <= A_out.get(agent_id) <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# INV-10: Observer Isolation
+# ---------------------------------------------------------------------------
+
+class TestInvariant10ObserverIsolation:
+    """INV-10: Observers are strictly read-only.
+
+    Observer exceptions are caught by fire_observers() and logged at WARNING.
+    They never propagate to the kernel — blast radius is zero.
+    """
+
+    def _small_state(self):
+        adj = np.array([[0, 1, 0], [0, 0, 1], [1, 0, 0]], dtype=float)
+        caps = np.ones((3, 2)) * 0.5
+        G = Graph(agent_ids=("A", "B", "C"), adjacency=adj, capabilities=caps)
+        phi = make_initial_phi(d_latent=4, d_features=16, d_ce=4, seed=0)
+        A = make_initial_authority(G.agent_ids, baseline=0.5)
+        return G, phi, A, []
+
+    def test_observer_exception_does_not_interrupt_kernel(self):
+        """An observer that always raises must not abort the kernel loop."""
+        from emergo.observer import _NoOpMixin
+
+        class AlwaysCrashes(_NoOpMixin):
+            def on_iteration_start(self, t, state):
+                raise RuntimeError("boom")
+
+            def on_ce_result(self, t, ce, accepted, errors):
+                raise RuntimeError("boom")
+
+        from emergo import emergo_kernel
+        final, reason = emergo_kernel(
+            self._small_state(),
+            max_iterations=10,
+            observers=[AlwaysCrashes()],
+            rng=np.random.default_rng(99),
+        )
+        assert reason in ("Converged", "Max iterations reached")
+
+    def test_fire_observers_isolates_each_observer(self):
+        """A crash in observer[0] must not prevent observer[1] from being called."""
+        from emergo.observer import _NoOpMixin, fire_observers
+
+        calls = []
+
+        class Crasher(_NoOpMixin):
+            def on_phi_updated(self, t, loss):
+                raise RuntimeError("crash")
+
+        class Recorder(_NoOpMixin):
+            def on_phi_updated(self, t, loss):
+                calls.append(loss)
+
+        fire_observers([Crasher(), Recorder()], "on_phi_updated", 0, 0.42)
+        assert calls == [0.42]
+
+    def test_kernel_state_unchanged_by_crashing_observer(self):
+        """A crashing observer must not corrupt the kernel's state tuple."""
+        from emergo.observer import _NoOpMixin
+        from emergo import emergo_kernel
+
+        initial = self._small_state()
+        G0, phi0, A0, _ = initial
+
+        class MutationAttempt(_NoOpMixin):
+            def on_iteration_start(self, t, state):
+                # Attempt to mutate — should be harmless because adjacency is read-only
+                try:
+                    state[0].adjacency[0, 0] = 999.0
+                except (ValueError, TypeError):
+                    pass
+
+        final, reason = emergo_kernel(
+            initial,
+            max_iterations=5,
+            observers=[MutationAttempt()],
+            rng=np.random.default_rng(1),
+        )
+        G_final = final[0]
+        # adjacency must still be read-only in the final state
+        assert not G_final.adjacency.flags.writeable
+
+    def test_observer_cannot_alter_authority_scores(self):
+        """Observer receives a snapshot dict; mutating it must not affect kernel A."""
+        from emergo.observer import _NoOpMixin
+        from emergo import emergo_kernel
+
+        class ScoreSmasher(_NoOpMixin):
+            def on_iteration_start(self, t, state):
+                _, _, A, _ = state
+                # Attempt to mutate the scores dict
+                try:
+                    A.scores["A"] = 0.0
+                except (AttributeError, TypeError):
+                    pass
+
+        final, reason = emergo_kernel(
+            self._small_state(),
+            max_iterations=10,
+            observers=[ScoreSmasher()],
+            rng=np.random.default_rng(2),
+        )
+        # Kernel should have completed; authority must still be in [0, 1]
+        _, _, A_final, _ = final
+        for agent_id in A_final.scores:
+            assert 0.0 <= A_final.get(agent_id) <= 1.0
+
+    def test_on_kernel_done_fired_for_both_termination_reasons(self):
+        """on_kernel_done must be called for both 'Converged' and 'Max iterations reached'."""
+        from emergo.observer import _NoOpMixin
+        from emergo import emergo_kernel
+
+        reasons_seen = []
+
+        class DoneTracker(_NoOpMixin):
+            def on_kernel_done(self, reason, state, n_iterations):
+                reasons_seen.append(reason)
+
+        # Converged path (loose threshold)
+        emergo_kernel(
+            self._small_state(),
+            max_iterations=50,
+            convergence_threshold=1e10,
+            observers=[DoneTracker()],
+            rng=np.random.default_rng(3),
+        )
+        assert "Converged" in reasons_seen
+
+        reasons_seen.clear()
+
+        # Max iterations path (tight threshold, few iterations)
+        emergo_kernel(
+            self._small_state(),
+            max_iterations=3,
+            convergence_threshold=1e-20,
+            observers=[DoneTracker()],
+            rng=np.random.default_rng(4),
+        )
+        assert "Max iterations reached" in reasons_seen

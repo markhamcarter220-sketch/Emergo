@@ -257,9 +257,51 @@ print(f"Saved: {saved}")
 
 ---
 
+## Observers (INV-10)
+
+Attach read-only observers to the kernel to accumulate metrics without interfering:
+
+```python
+from emergo import HistoryObserver, LoggingObserver, emergo_kernel
+
+obs = HistoryObserver()
+final_state, reason = emergo_kernel(
+    initial_state, max_iterations=200, observers=[obs]
+)
+print(f"Acceptance rate: {obs.ce_acceptance_rate:.0%}")
+print(f"Final mean error: {obs.mean_errors[-1]:.4f}")
+print(obs.summary())
+```
+
+Observer exceptions are caught and logged — they can never crash the kernel (INV-10).
+
+---
+
+## Dependency-Based Planning
+
+Use `DependencyPlanner` when task steps have explicit prerequisites:
+
+```python
+from emergo import DependencyPlanner, Executor
+
+planner = DependencyPlanner(steps=[
+    ("fetch",     "Retrieve source documents",  []),
+    ("extract",   "Extract key facts",          ["fetch"]),
+    ("summarize", "Write summary draft",        ["extract"]),
+    ("validate",  "Validate the draft",         ["summarize", "extract"]),
+])
+executor = Executor(lux=lux, planner=planner)
+result = executor.execute(goal, state)
+```
+
+`DependencyPlanner` validates the DAG at construction: raises `ValueError` on cycles,
+unknown dependencies, or duplicate step names.
+
+---
+
 ## System Invariants
 
-Nine invariants are enforced and tested:
+Ten invariants are enforced and tested:
 
 | Invariant | Description |
 |---|---|
@@ -272,6 +314,7 @@ Nine invariants are enforced and tested:
 | **INV-7** Observable + Fail-Closed | Every CE attempt (success or failure) is audited |
 | **INV-8** Bounded Speculation | Depth limit + per-agent pending CE quota enforced |
 | **INV-9** Coordinator Serialization | Parallel proposals sorted by authority; no duplicate edge writes |
+| **INV-10** Observer Isolation | Observer exceptions are caught and logged; blast radius zero |
 
 Run the invariant tests:
 
@@ -300,16 +343,21 @@ EMERGO_CONFLICT_STRATEGY=priority       # coordinator conflict resolution
 ## Core References
 
 - **SPECIFICATION.md** — formal invariants, state machine, and Lux/Emergo contract
-- **emergo/lux_bridge.py** — `LuxBridge` protocol + `SimulatedLuxBridge` + `RealLuxBridge`
+- **emergo/lux_bridge.py** — `LuxBridge` protocol + `SimulatedLuxBridge` + `RealLuxBridge` + `validate_bridge()`
 - **emergo/lux.py** — single authorization gate
 - **emergo/executor.py** — Goal execution loop (INV-5/6/7/8)
 - **emergo/coordinator.py** — MultiAgentCoordinator (INV-9)
+- **emergo/observer.py** — `KernelObserver` protocol + `LoggingObserver` + `HistoryObserver` (INV-10)
+- **emergo/planner.py** — `Planner`, `SequentialPlanner`, `DependencyPlanner`
 - **emergo/ce_execution.py** — graph-mutation operations (INV-1/3/4)
 - **emergo/phi_update.py** — joint φ/F gradient descent (entanglement guard)
 - **emergo/diagnostics.py** — 8 failure-mode detectors + health report
-- **emergo/visualize.py** — optional matplotlib/networkx visualization
-- **tests/test_invariants.py** — all nine invariants verified in code
+- **emergo/visualize.py** — optional matplotlib/networkx plots + `print_health_report()` + `export_diagnostics_json()`
+- **tests/test_invariants.py** — all ten invariants verified in code
 - **tests/test_coordinator.py** — MultiAgentCoordinator test suite
+- **tests/test_observer.py** — observer protocol and INV-10 isolation tests
+- **tests/test_planner.py** — Planner / SequentialPlanner / DependencyPlanner tests
+- **tests/test_integration.py** — end-to-end pipeline tests
 
 ---
 

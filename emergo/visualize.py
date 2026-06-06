@@ -1,10 +1,14 @@
 """Optional visualization utilities for Emergo diagnostics.
 
-All public functions return a matplotlib Figure, or None when matplotlib
+All plot functions return a matplotlib Figure, or None when matplotlib
 or networkx is not installed — never raise ImportError.  The core emergo
 package has no mandatory GUI dependency; install extras to enable plots::
 
     pip install matplotlib networkx
+
+ASCII / JSON utilities (no optional deps):
+  print_health_report(results)  — tabular health check to stdout / file
+  export_diagnostics_json(diag, path)  — serialize KernelDiagnostics to JSON
 
 Usage::
 
@@ -16,12 +20,14 @@ Usage::
 """
 from __future__ import annotations
 
+import json
 import logging
+import sys
 from pathlib import Path
-from typing import List, Optional, Sequence, TYPE_CHECKING
+from typing import IO, Any, Dict, List, Optional, Sequence, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from emergo.diagnostics import KernelDiagnostics
+    from emergo.diagnostics import DetectorResult, KernelDiagnostics
     from emergo.types import Graph, State
 
 logger = logging.getLogger(__name__)
@@ -289,3 +295,93 @@ def render_health_dashboard(
         _save(plot_graph_evolution(list(graphs)), "graph_evolution")
 
     return saved
+
+
+# ---------------------------------------------------------------------------
+# ASCII / plain-text utilities (no optional deps)
+# ---------------------------------------------------------------------------
+
+def print_health_report(
+    results: "List[DetectorResult]",
+    out: "IO[str]" = None,
+) -> None:
+    """Print a formatted health-check table to a file-like object (default: stdout).
+
+    Each row shows: status (OK / FAIL), detector name, severity, and evidence.
+    Requires no external dependencies — always available.
+
+    Args:
+        results: List of DetectorResult objects from run_health_check().
+        out:     Output stream.  Defaults to sys.stdout.
+    """
+    if out is None:
+        out = sys.stdout
+
+    col_name = 36
+    col_sev = 8
+
+    header = f"{'Detector':<{col_name}} {'Severity':>{col_sev}}  Status"
+    separator = "-" * (len(header) + 2)
+    print(header, file=out)
+    print(separator, file=out)
+
+    for r in results:
+        status = "FAIL" if r.failure_detected else " OK "
+        print(
+            f"[{status}] {r.name:<{col_name}} {r.severity:>{col_sev}.2f}  {r.evidence}",
+            file=out,
+        )
+        if r.failure_detected and r.recommendation:
+            print(f"       Recommendation: {r.recommendation}", file=out)
+
+    n_fail = sum(1 for r in results if r.failure_detected)
+    print(separator, file=out)
+    print(f"Total: {len(results)} detectors, {n_fail} failure(s) detected", file=out)
+
+
+def export_diagnostics_json(
+    diag: "KernelDiagnostics",
+    path: str,
+    *,
+    indent: int = 2,
+) -> str:
+    """Serialize KernelDiagnostics to a JSON file at path.
+
+    Returns the absolute path written.  Raises OSError on write failure.
+    Requires no external dependencies — always available.
+
+    Fields serialized per IterationRecord:
+        iteration, ce_attempted, ce_accepted, ce_type, ce_proposer,
+        ce_participants, authority_scores, authority_delta,
+        topology_entropy, edge_count, error_mean, phi_loss.
+    """
+
+    def _record_to_dict(r: Any) -> Dict[str, Any]:
+        return {
+            "iteration": r.iteration,
+            "ce_attempted": r.ce_attempted,
+            "ce_accepted": r.ce_accepted,
+            "ce_type": r.ce_type,
+            "ce_proposer": r.ce_proposer,
+            "ce_participants": list(r.ce_participants) if r.ce_participants else [],
+            "authority_scores": r.authority_scores,
+            "authority_delta": r.authority_delta,
+            "topology_entropy": r.topology_entropy,
+            "edge_count": r.edge_count,
+            "error_mean": r.error_mean,
+            "phi_loss": r.phi_loss,
+        }
+
+    payload: Dict[str, Any] = {
+        "agent_ids": list(diag.agent_ids),
+        "n_records": len(diag.records),
+        "records": [_record_to_dict(r) for r in diag.records],
+    }
+
+    out_path = Path(path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=indent)
+
+    logger.info("export_diagnostics_json: wrote %d records to %s", len(diag.records), out_path)
+    return str(out_path.resolve())

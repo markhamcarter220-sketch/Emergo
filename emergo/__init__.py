@@ -17,11 +17,14 @@ Public surface:
     emergo_kernel, make_initial_phi, make_initial_authority
 
   Execution runtime:
-    Executor, Planner, SequentialPlanner, ExecutionResult, TaskOutcome
+    Executor, Planner, SequentialPlanner, DependencyPlanner, ExecutionResult, TaskOutcome
     mock_task_runner, failing_task_runner
 
   Multi-agent coordination:
     MultiAgentCoordinator, ProposedCE, CoordinationRound
+
+  Observers (INV-10):
+    KernelObserver, LoggingObserver, HistoryObserver, fire_observers
 
   Diagnostics:
     KernelDiagnostics, IterationRecord, DetectorResult, run_health_check
@@ -54,8 +57,9 @@ from emergo.executor import (
     mock_task_runner,
     failing_task_runner,
 )
-from emergo.planner import Planner, SequentialPlanner
+from emergo.planner import Planner, SequentialPlanner, DependencyPlanner
 from emergo.coordinator import MultiAgentCoordinator, ProposedCE, CoordinationRound
+from emergo.observer import KernelObserver, LoggingObserver, HistoryObserver, fire_observers
 from emergo.diagnostics import (
     KernelDiagnostics,
     IterationRecord,
@@ -85,9 +89,11 @@ __all__ = [
     "Executor", "ExecutionResult", "TaskOutcome",
     "mock_task_runner", "failing_task_runner",
     # planner
-    "Planner", "SequentialPlanner",
+    "Planner", "SequentialPlanner", "DependencyPlanner",
     # coordinator
     "MultiAgentCoordinator", "ProposedCE", "CoordinationRound",
+    # observer (INV-10)
+    "KernelObserver", "LoggingObserver", "HistoryObserver", "fire_observers",
     # diagnostics
     "KernelDiagnostics", "IterationRecord", "DetectorResult", "run_health_check",
     "detect_authority_collapse", "detect_topology_lock_in", "detect_phi_gaming",

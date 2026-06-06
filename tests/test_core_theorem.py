@@ -356,6 +356,46 @@ class TestCoreTheoremValidation:
         assert A.get("A") > 0.5, "Good predictor's authority must rise above baseline"
         assert A.get("B") < 0.5, "Poor predictor's authority must fall below baseline"
 
+    def test_proposer_and_participant_get_different_authority_deltas(self):
+        """After a non-trivial CE, proposer and participant authority deltas differ."""
+        G = _make_graph(agent_ids=("A", "B", "C"), edge_density=0.0)
+        A = make_initial_authority(G.agent_ids)
+        phi = make_initial_phi(d_latent=4, d_features=16, d_ce=4)
+        CE = make_ce("add_edge", ("A", "B"), weight=0.5)
+        lux = _make_lux_with_caps("A", "B", "C")
+
+        G_next, success, _ = ce_execute(G, CE, lux, A)
+        assert success
+
+        errors = error_computation(G, G_next, phi, CE)
+        A_next = authority_update(A, errors)
+
+        delta_A = A_next.get("A") - A.get("A")
+        delta_B = A_next.get("B") - A.get("B")
+        # Proposer gets global error, participant gets local structural error → different deltas
+        assert delta_A != pytest.approx(delta_B, abs=1e-9)
+
+    def test_topology_exploration_persists_longer(self):
+        """With differentiated errors, authority stays healthy → >10 CEs accepted in 50 iters."""
+        adj = np.zeros((3, 3))
+        caps = np.ones((3, 2)) * 0.5
+        G0 = Graph(agent_ids=("A", "B", "C"), adjacency=adj, capabilities=caps)
+        phi0 = make_initial_phi(d_latent=4, d_features=16, d_ce=4)
+        A0 = make_initial_authority(("A", "B", "C"))
+        initial_state = (G0, phi0, A0, [])
+
+        final_state, reason, diag = emergo_kernel(
+            initial_state=initial_state,
+            max_iterations=50,
+            collect_diagnostics=True,
+            rng=np.random.default_rng(1),
+        )
+
+        accepted = sum(1 for r in diag.records if r.ce_accepted)
+        assert accepted > 10, (
+            f"Only {accepted} CEs accepted in 50 iterations — authority likely collapsed"
+        )
+
     def test_end_to_end_state_progression(self):
         """State machine (G, φ, A, E) evolves correctly through the kernel loop."""
         n = 3

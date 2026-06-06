@@ -265,20 +265,20 @@ class TestCliqueFormation:
 # ---------------------------------------------------------------------------
 
 class TestCreditAssignmentAmbiguity:
-    def test_failure_definitively_detected(self):
-        """Due to architecture (all participants get same error), failure IS expected."""
+    def test_failure_resolved_by_differentiated_errors(self):
+        """With differentiated per-agent errors, credit assignment ambiguity resolves."""
         final_state, reason, diag = _run(n_agents=3, n_iter=300)
         result = detect_credit_assignment_ambiguity(diag)
         print(f"\n[credit_assignment_ambiguity] severity={result.severity:.2f} "
               f"detected={result.failure_detected} | {result.evidence}")
-        # Given current architecture: all participants get same error → same delta
-        assert result.failure_detected is True
+        # Proposer gets global error, participants get local error → differentiated
+        assert result.failure_detected is False
 
-    def test_medium_scale_failure_detected(self):
-        """Same failure expected at medium scale."""
+    def test_medium_scale_failure_resolved(self):
+        """Credit assignment ambiguity resolved at medium scale too."""
         final_state, reason, diag = _run(n_agents=10, n_iter=500)
         result = detect_credit_assignment_ambiguity(diag)
-        assert result.failure_detected is True
+        assert result.failure_detected is False
 
     def test_format(self):
         """DetectorResult has all required fields."""
@@ -287,7 +287,7 @@ class TestCreditAssignmentAmbiguity:
         assert result.name == "credit_assignment_ambiguity"
         assert isinstance(result.evidence, str)
         assert isinstance(result.recommendation, str)
-        assert result.severity == 1.0
+        assert result.severity <= 1.0
 
 
 # ---------------------------------------------------------------------------

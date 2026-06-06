@@ -40,7 +40,7 @@ def authority_update(
     for agent_id, error_a in errors.per_agent.items():
         correctness_a = 1.0 - (error_a / max_possible_error)
         delta_a = correctness_a - A_next.baseline
-        new_score = A_t.get(agent_id) + eta * delta_a
+        new_score = float(np.clip(A_t.get(agent_id) + eta * delta_a, 0.0, 1.0))
         A_next.set(agent_id, new_score)
 
     return A_next

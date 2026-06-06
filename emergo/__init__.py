@@ -19,6 +19,15 @@ Public surface:
   Execution runtime:
     Executor, Planner, SequentialPlanner, ExecutionResult, TaskOutcome
     mock_task_runner, failing_task_runner
+
+  Multi-agent coordination:
+    MultiAgentCoordinator, ProposedCE, CoordinationRound
+
+  Diagnostics:
+    KernelDiagnostics, IterationRecord, DetectorResult, run_health_check
+    detect_authority_collapse, detect_topology_lock_in, detect_phi_gaming,
+    detect_speculative_cascades, detect_lux_bottleneck, detect_clique_formation,
+    detect_credit_assignment_ambiguity, detect_emergent_conservatism
 """
 
 from emergo.types import (
@@ -46,6 +55,7 @@ from emergo.executor import (
     failing_task_runner,
 )
 from emergo.planner import Planner, SequentialPlanner
+from emergo.coordinator import MultiAgentCoordinator, ProposedCE, CoordinationRound
 from emergo.diagnostics import (
     KernelDiagnostics,
     IterationRecord,
@@ -76,6 +86,8 @@ __all__ = [
     "mock_task_runner", "failing_task_runner",
     # planner
     "Planner", "SequentialPlanner",
+    # coordinator
+    "MultiAgentCoordinator", "ProposedCE", "CoordinationRound",
     # diagnostics
     "KernelDiagnostics", "IterationRecord", "DetectorResult", "run_health_check",
     "detect_authority_collapse", "detect_topology_lock_in", "detect_phi_gaming",

@@ -17,14 +17,17 @@ Nothing in Emergo may touch capabilities or ledgers except through this interfac
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Optional, Set
+from typing import Any, Dict, Optional, Set
 
 from emergo.types import Authority, CoordinationEvent, Graph
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -130,10 +133,12 @@ class SimulatedLuxBridge(LuxBridge):
     def grant_capability(self, agent_id: str, capability: str) -> None:
         with self._lock:
             self._capabilities.setdefault(agent_id, set()).add(capability)
+        logger.debug("SimulatedLux: granted capability %r to %r", capability, agent_id)
 
     def revoke_capability(self, agent_id: str, capability: str) -> None:
         with self._lock:
             self._capabilities.get(agent_id, set()).discard(capability)
+        logger.debug("SimulatedLux: revoked capability %r from %r", capability, agent_id)
 
     def check_capability(self, agent_id: str, capability: str) -> bool:
         with self._lock:
@@ -155,14 +160,29 @@ class SimulatedLuxBridge(LuxBridge):
             self._ensure_ledger(agent_id, resource)
             balance = self._ledger[agent_id][resource]
             if balance < amount:
+                logger.debug(
+                    "SimulatedLux: deduct DENIED %r %r %.3f (balance=%.3f)",
+                    agent_id, resource, amount, balance,
+                )
                 return False
             self._ledger[agent_id][resource] = balance - amount
+            logger.debug(
+                "SimulatedLux: deducted %r %r %.3f (remaining=%.3f)",
+                agent_id, resource, amount, self._ledger[agent_id][resource],
+            )
             return True
 
     def refund_resource(self, agent_id: str, resource: str, amount: float) -> None:
         with self._lock:
             self._ensure_ledger(agent_id, resource)
             self._ledger[agent_id][resource] += amount
+        logger.debug("SimulatedLux: refunded %r %r %.3f", agent_id, resource, amount)
+
+    def get_resource_snapshot(self) -> Dict[str, Dict[str, float]]:
+        """Return a deep copy of the current ledger state (for observability)."""
+        import copy
+        with self._lock:
+            return copy.deepcopy(self._ledger)
 
     # --- Audit ---
 
@@ -186,9 +206,12 @@ class SimulatedLuxBridge(LuxBridge):
             "details": dict(details or {}),
         }
         with self._lock:
-            # Append a frozen copy; further mutations to `record` won't affect storage.
             import copy
             self._audit_log.append(copy.deepcopy(record))
+        logger.debug(
+            "SimulatedLux: audit %s ce_type=%r success=%s agents=%s",
+            record_id[:8], ce_type, success, agent_ids,
+        )
         return record_id
 
     def get_audit_log(self) -> list:

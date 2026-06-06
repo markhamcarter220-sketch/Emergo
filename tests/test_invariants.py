@@ -15,12 +15,15 @@ import numpy as np
 import pytest
 
 from emergo import (
+    CoordinationRound,
     Executor,
     Goal,
     Graph,
     CoordinationEvent,
     Lux,
+    MultiAgentCoordinator,
     Planner,
+    ProposedCE,
     TaskOutcome,
     ce_execute,
     error_computation,
@@ -533,3 +536,102 @@ class TestInvariant8BoundedSpeculation:
         exec_.reset_pending()
         result2 = exec_.execute(deeper_goal, _exec_state())
         assert result2.tasks_succeeded == 1
+
+
+# ---------------------------------------------------------------------------
+# INV-9: Coordinator Serialization
+# ---------------------------------------------------------------------------
+
+def _coord_state(agent_ids=("A", "B", "C")):
+    n = len(agent_ids)
+    adj = np.zeros((n, n), dtype=float)
+    caps = np.ones((n, 2), dtype=float) * 0.5
+    G = Graph(agent_ids=tuple(agent_ids), adjacency=adj, capabilities=caps)
+    phi = make_initial_phi(d_latent=4, d_features=16, d_ce=4)
+    A = make_initial_authority(agent_ids)
+    return G, phi, A, []
+
+
+class TestInvariant9CoordinatorSerialization:
+    """INV-9: Proposals are sorted by authority before Lux evaluation.
+    No two proposals may claim the same directed edge in one round."""
+
+    def test_higher_authority_wins_conflict(self):
+        """When two agents target the same edge, the higher-authority one wins."""
+        G, phi, A, E = _coord_state()
+        A = Authority(scores={"A": 0.8, "B": 0.2, "C": 0.5}, baseline=0.5)
+        state = (G, phi, A, E)
+
+        coord = MultiAgentCoordinator(lux=Lux())
+        ce = make_ce("add_edge", ("A", "B"), weight=0.5)
+        round_ = coord.coordinate([
+            ProposedCE("B", ce, priority=0.2),  # lower authority
+            ProposedCE("A", ce, priority=0.8),  # higher authority
+        ], state)
+
+        accepted_agents = [p.agent_id for p in round_.accepted]
+        assert "A" in accepted_agents
+        assert "B" not in accepted_agents
+
+    def test_conflict_detection_prevents_duplicate_edge_writes(self):
+        """A directed edge can only be written once per round."""
+        state = _coord_state()
+        coord = MultiAgentCoordinator(lux=Lux())
+        # Both target A→B
+        proposals = [
+            ProposedCE("A", make_ce("add_edge", ("A", "B"), weight=0.6), priority=0.9),
+            ProposedCE("B", make_ce("add_edge", ("A", "B"), weight=0.3), priority=0.1),
+        ]
+        round_ = coord.coordinate(proposals, state)
+        # Exactly one accepted (no double-write)
+        assert len(round_.accepted) == 1
+        assert round_.n_conflicts_detected == 1
+
+    def test_each_proposal_produces_audit(self):
+        """Every proposal — accepted or conflict-rejected — must generate an audit record."""
+        bridge = SimulatedLuxBridge()
+        lux = Lux(bridge=bridge)
+        state = _coord_state()
+        coord = MultiAgentCoordinator(lux=lux)
+        proposals = [
+            ProposedCE("A", make_ce("add_edge", ("A", "B"), weight=0.5), priority=0.9),
+            ProposedCE("B", make_ce("add_edge", ("A", "B"), weight=0.5), priority=0.1),
+            ProposedCE("C", make_ce("add_edge", ("B", "C"), weight=0.5)),
+        ]
+        round_ = coord.coordinate(proposals, state)
+        total = len(round_.accepted) + len(round_.rejected)
+        assert len(round_.audit_ids) == total
+        log = bridge.get_audit_log()
+        assert len(log) >= total
+
+    def test_max_agents_cap_is_enforced(self):
+        """More than max_agents proposals are truncated before processing."""
+        state = _coord_state(("A", "B", "C"))
+        coord = MultiAgentCoordinator(lux=Lux(), max_agents=2)
+        proposals = [
+            ProposedCE("A", make_ce("add_edge", ("A", "B"), weight=0.5)),
+            ProposedCE("B", make_ce("add_edge", ("B", "C"), weight=0.5)),
+            ProposedCE("C", make_ce("add_edge", ("A", "C"), weight=0.5)),  # excess
+        ]
+        round_ = coord.coordinate(proposals, state)
+        total = len(round_.accepted) + len(round_.rejected)
+        assert total <= 2
+
+    def test_state_is_consistent_after_round(self):
+        """Graph arrays remain read-only and authority stays in [0,1] after a round."""
+        state = _coord_state()
+        coord = MultiAgentCoordinator(lux=Lux())
+        proposals = [
+            ProposedCE("A", make_ce("add_edge", ("A", "B"), weight=0.5)),
+            ProposedCE("B", make_ce("add_edge", ("B", "C"), weight=0.3)),
+        ]
+        round_ = coord.coordinate(proposals, state)
+        G_out, phi_out, A_out, E_out = round_.final_state
+
+        # Read-only enforcement preserved
+        assert not G_out.adjacency.flags.writeable
+        assert not G_out.capabilities.flags.writeable
+
+        # Authority in [0, 1]
+        for agent_id in G_out.agent_ids:
+            assert 0.0 <= A_out.get(agent_id) <= 1.0

@@ -7,32 +7,38 @@ A system where agents earn authority by accurately predicting how their actions 
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────┐
-│                     Emergo                          │
-│                                                     │
-│  Goal ──→ Planner ──→ Executor                     │
-│                          │                          │
-│                 ┌────────┴──────────────┐           │
-│                 │  Four Atomic Ops      │           │
-│                 │  1. CE_Execution      │           │
-│                 │  2. ErrorComputation  │           │
-│                 │  3. AuthorityUpdate   │           │
-│                 │  4. PhiUpdate         │           │
-│                 └───────────────────────┘           │
-│                                                     │
-│  State = (Graph, PhiMap, Authority, ErrorHistory)   │
-└──────────────────────┬──────────────────────────────┘
-                       │ LuxBridge
-                       │ (authorize, deduct_resource, audit)
-┌──────────────────────▼──────────────────────────────┐
-│                      Lux                            │
-│  Capabilities · Resource Ledger · Policy · Audit   │
-└─────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph Emergo["Emergo (Adaptive Layer)"]
+        G[Goal] --> P[Planner]
+        P --> E[Executor]
+        MAC[MultiAgentCoordinator\n2–4 parallel proposals] --> |serialize by authority| K
+
+        subgraph KernelLoop["Kernel Loop"]
+            K[1 CE_Execution] --> EC[2 ErrorComputation]
+            EC --> AU[3 AuthorityUpdate]
+            AU --> PU[4 PhiUpdate]
+            PU -.->|every N steps| K
+        end
+
+        E --> |single-agent path| K
+        DIAG[Diagnostics\n8 failure detectors] --> VIZ[Visualize\nmatplotlib · networkx]
+
+        State["State = (Graph, PhiMap, Authority, ErrorHistory)"]
+    end
+
+    subgraph LuxLayer["Lux (Governance Layer)"]
+        LB[LuxBridge\nauthorize · deduct · refund · audit]
+    end
+
+    MAC --> |authorize_ce check-only| LB
+    E --> |authorize_full + pre-deduct| LB
+    K --> |authorize| LB
+    LB --> |fail-closed| K
 ```
 
-**Lux** = stable governance layer (capabilities, ledger, topology enforcement, fail-closed).  
-**Emergo** = adaptive execution layer (planning, decomposition, coordination, learning).
+**Lux** = stable governance layer (capabilities, resource ledger, topology enforcement, fail-closed).  
+**Emergo** = adaptive execution layer (planning, decomposition, multi-agent coordination, learning).
 
 Emergo never grants capabilities, never modifies ledger balances directly, and never
 bypasses Lux. Every coordination event crosses the `LuxBridge`.
@@ -188,9 +194,72 @@ result = executor.execute(goal, state)
 
 ---
 
+## Multi-Agent Coordination
+
+`MultiAgentCoordinator` lets 2–4 agents submit proposals simultaneously.
+Proposals are **serialized by authority** (INV-9) before Lux evaluates them:
+
+```python
+from emergo import MultiAgentCoordinator, ProposedCE
+
+lux = Lux()
+coord = MultiAgentCoordinator(lux=lux)
+
+round_ = coord.coordinate([
+    ProposedCE("agent_A", make_ce("add_edge", ("A", "B"), weight=0.6)),
+    ProposedCE("agent_B", make_ce("add_edge", ("A", "B"), weight=0.3)),
+    ProposedCE("agent_C", make_ce("add_edge", ("C", "D"), weight=0.5)),
+], state)
+
+print(f"Accepted: {[p.agent_id for p in round_.accepted]}")
+print(f"Rejected: {round_.rejection_reasons}")
+final_state = round_.final_state
+```
+
+**What the coordinator guarantees:**
+- At most 4 proposals per round (configurable via `EMERGO_MAX_COORDINATOR_AGENTS`)
+- Proposals with the same directed edge are conflicts — only the highest-authority one proceeds
+- Every proposal generates an audit record, accepted or not
+- No resource is charged for conflict-rejected proposals
+
+---
+
+## Observability & Visualization
+
+Run the kernel with diagnostics enabled to get a health report:
+
+```python
+final_state, reason, diag = emergo_kernel(
+    initial_state=(G0, phi0, A0, []),
+    max_iterations=500,
+    collect_diagnostics=True,
+)
+
+from emergo import run_health_check
+results = run_health_check(diag, final_state)
+for r in results:
+    status = "FAIL" if r.failure_detected else " OK "
+    print(f"[{status}] {r.name:<35} severity={r.severity:.2f}")
+    print(f"       {r.evidence}")
+```
+
+Save visualizations (requires `pip install matplotlib networkx`):
+
+```python
+from emergo.visualize import render_health_dashboard
+
+saved = render_health_dashboard(diag, final_state, output_dir="./plots")
+print(f"Saved: {saved}")
+# → ['./plots/emergo_authority_history.png',
+#    './plots/emergo_phi_loss.png',
+#    './plots/emergo_edge_count.png']
+```
+
+---
+
 ## System Invariants
 
-Eight invariants are enforced and tested:
+Nine invariants are enforced and tested:
 
 | Invariant | Description |
 |---|---|
@@ -202,6 +271,7 @@ Eight invariants are enforced and tested:
 | **INV-6** Resource Conservation | Every task pre-charges Lux ledger; failures trigger refund |
 | **INV-7** Observable + Fail-Closed | Every CE attempt (success or failure) is audited |
 | **INV-8** Bounded Speculation | Depth limit + per-agent pending CE quota enforced |
+| **INV-9** Coordinator Serialization | Parallel proposals sorted by authority; no duplicate edge writes |
 
 Run the invariant tests:
 
@@ -216,11 +286,13 @@ python -m pytest tests/test_invariants.py -v
 Override any default via environment variable:
 
 ```bash
-EMERGO_LUX_MODE=real          # "simulated" (default) or "real"
-EMERGO_MAX_DEPTH=5             # max task decomposition depth
-EMERGO_MAX_PENDING=10          # max pending CEs per agent
-EMERGO_ETA=0.05                # authority update learning rate
-EMERGO_INITIAL_BUDGET=100.0    # starting resource balance (simulated Lux)
+EMERGO_LUX_MODE=real                    # "simulated" (default) or "real"
+EMERGO_MAX_DEPTH=5                      # max task decomposition depth
+EMERGO_MAX_PENDING=10                   # max pending CEs per agent
+EMERGO_ETA=0.05                         # authority update learning rate
+EMERGO_INITIAL_BUDGET=100.0             # starting resource balance (simulated Lux)
+EMERGO_MAX_COORDINATOR_AGENTS=4         # max proposals per coordination round (INV-9)
+EMERGO_CONFLICT_STRATEGY=priority       # coordinator conflict resolution
 ```
 
 ---
@@ -228,12 +300,16 @@ EMERGO_INITIAL_BUDGET=100.0    # starting resource balance (simulated Lux)
 ## Core References
 
 - **SPECIFICATION.md** — formal invariants, state machine, and Lux/Emergo contract
-- **emergo/lux_bridge.py** — `LuxBridge` protocol + `SimulatedLuxBridge`
+- **emergo/lux_bridge.py** — `LuxBridge` protocol + `SimulatedLuxBridge` + `RealLuxBridge`
 - **emergo/lux.py** — single authorization gate
 - **emergo/executor.py** — Goal execution loop (INV-5/6/7/8)
+- **emergo/coordinator.py** — MultiAgentCoordinator (INV-9)
 - **emergo/ce_execution.py** — graph-mutation operations (INV-1/3/4)
 - **emergo/phi_update.py** — joint φ/F gradient descent (entanglement guard)
-- **tests/test_invariants.py** — all eight invariants verified in code
+- **emergo/diagnostics.py** — 8 failure-mode detectors + health report
+- **emergo/visualize.py** — optional matplotlib/networkx visualization
+- **tests/test_invariants.py** — all nine invariants verified in code
+- **tests/test_coordinator.py** — MultiAgentCoordinator test suite
 
 ---
 

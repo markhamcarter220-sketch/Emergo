@@ -175,6 +175,48 @@ Audit records are stored as deep copies — callers cannot retroactively modify 
 - Pending count is decremented after every task (success, failure, or exception).
 - Both limits are configurable via env vars (`EMERGO_MAX_DEPTH`, `EMERGO_MAX_PENDING`).
 
+### INV-9: Coordinator Serialization
+When multiple agents submit proposals simultaneously through `MultiAgentCoordinator`:
+- At most `MAX_COORDINATOR_AGENTS` proposals are accepted per round (default 4).
+- Proposals are sorted by authority score (descending) before any Lux evaluation.
+  This ordering is deterministic and reproducible — a direct extension of INV-4.
+- Two proposals targeting the same directed edge constitute a **conflict**: the
+  lower-priority one is rejected *before* touching Lux (no resource charge, INV-6).
+- Every proposal — accepted or conflict-rejected — produces an audit record (INV-7).
+- `phi_update` is NOT run inside the coordinator; it remains the kernel loop's
+  responsibility (strict separation of concerns).
+
+---
+
+## Multi-Agent Coordination
+
+`MultiAgentCoordinator` allows 2–4 agents to submit CE proposals that are evaluated
+together in one coordination round.
+
+```python
+coord = MultiAgentCoordinator(lux=lux)
+round_ = coord.coordinate([
+    ProposedCE("agent_A", ce_A),
+    ProposedCE("agent_B", ce_B),
+], state)
+final_state = round_.final_state
+```
+
+**Protocol:**
+1. Proposals truncated to max_agents (INV-9).
+2. Priority filled from `A.get(agent_id)` where explicit priority == 0.0.
+3. Sorted descending by priority (INV-9 / INV-4).
+4. Conflicts detected (same directed edge → lower priority rejected, INV-9).
+5. Each non-conflicting proposal: `ce_execute → error_computation → authority_update`.
+6. Audit record written for every proposal (INV-7).
+7. `CoordinationRound` returned with full accounting of accepted/rejected CEs.
+
+State evolves incrementally: each accepted CE sees the updated graph from previous
+accepted CEs in the same round.
+
+**Conflict strategy:** `"priority"` (only strategy currently). Configurable via
+`EMERGO_CONFLICT_STRATEGY` env var; future strategies: `"timestamp"`, `"random"`.
+
 ---
 
 ## Convergence
@@ -198,3 +240,24 @@ All runtime parameters are in `emergo/config.py` and can be overridden via env v
 | `EMERGO_PHI_INTERVAL` | `10` | φ update frequency |
 | `EMERGO_INITIAL_BUDGET` | `100.0` | Starting resource balance (simulated) |
 | `EMERGO_TASK_COST` | `1.0` | Default task resource cost |
+| `EMERGO_MAX_COORDINATOR_AGENTS` | `4` | Max proposals per coordination round (INV-9) |
+| `EMERGO_CONFLICT_STRATEGY` | `priority` | Coordinator conflict resolution strategy |
+
+---
+
+## Observability
+
+**Diagnostics** (`emergo.diagnostics`):
+- `KernelDiagnostics` — per-iteration record of CE type, authority scores, topology
+  entropy, edge count, and φ loss.
+- `run_health_check(diag, state)` — runs all 8 failure-mode detectors.
+- `DetectorResult` — `{name, failure_detected, severity ∈ [0,1], evidence, recommendation}`.
+
+**Visualization** (`emergo.visualize`) — optional; requires `pip install matplotlib networkx`:
+- `plot_authority_history(diag)` — per-agent authority time series.
+- `plot_phi_loss(diag)` — φ training loss over iterations (log scale).
+- `plot_edge_count(diag)` — active edge count over time.
+- `plot_graph_evolution(graphs)` — grid of networkx topology snapshots.
+- `render_health_dashboard(diag, state, output_dir)` — saves all plots as PNGs.
+
+All visualization functions return `None` gracefully when matplotlib/networkx is absent.

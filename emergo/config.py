@@ -34,3 +34,12 @@ DEFAULT_INITIAL_BUDGET: float = float(os.getenv("EMERGO_INITIAL_BUDGET", "100.0"
 
 DEFAULT_TASK_COST: float = float(os.getenv("EMERGO_TASK_COST", "1.0"))
 """Default resource cost charged per task execution CE."""
+
+# --- Multi-Agent Coordinator ---
+MAX_COORDINATOR_AGENTS: int = int(os.getenv("EMERGO_MAX_COORDINATOR_AGENTS", "4"))
+"""Maximum number of agents that may propose simultaneously in one coordination round (INV-9)."""
+
+COORDINATOR_CONFLICT_STRATEGY: str = os.getenv("EMERGO_CONFLICT_STRATEGY", "priority")
+"""Conflict resolution strategy for MultiAgentCoordinator.
+   'priority': proposals sorted by authority; first on an edge wins.
+"""

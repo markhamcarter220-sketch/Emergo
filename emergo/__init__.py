@@ -26,6 +26,13 @@ Public surface:
   Observers (INV-10):
     KernelObserver, LoggingObserver, HistoryObserver, fire_observers
 
+  Proposal generators:
+    ProposalGenerator, DefaultProposalGenerator,
+    SequenceProposalGenerator, WeightedMixGenerator
+
+  Metrics / telemetry:
+    MetricsObserver
+
   Diagnostics:
     KernelDiagnostics, IterationRecord, DetectorResult, run_health_check
     detect_authority_collapse, detect_topology_lock_in, detect_phi_gaming,
@@ -60,6 +67,13 @@ from emergo.executor import (
 from emergo.planner import Planner, SequentialPlanner, DependencyPlanner
 from emergo.coordinator import MultiAgentCoordinator, ProposedCE, CoordinationRound
 from emergo.observer import KernelObserver, LoggingObserver, HistoryObserver, fire_observers
+from emergo.proposal import (
+    ProposalGenerator,
+    DefaultProposalGenerator,
+    SequenceProposalGenerator,
+    WeightedMixGenerator,
+)
+from emergo.metrics import MetricsObserver
 from emergo.diagnostics import (
     KernelDiagnostics,
     IterationRecord,
@@ -94,6 +108,11 @@ __all__ = [
     "MultiAgentCoordinator", "ProposedCE", "CoordinationRound",
     # observer (INV-10)
     "KernelObserver", "LoggingObserver", "HistoryObserver", "fire_observers",
+    # proposal generators
+    "ProposalGenerator", "DefaultProposalGenerator",
+    "SequenceProposalGenerator", "WeightedMixGenerator",
+    # metrics / telemetry
+    "MetricsObserver",
     # diagnostics
     "KernelDiagnostics", "IterationRecord", "DetectorResult", "run_health_check",
     "detect_authority_collapse", "detect_topology_lock_in", "detect_phi_gaming",

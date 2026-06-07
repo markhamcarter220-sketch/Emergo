@@ -101,16 +101,17 @@ class TestInvariant2FeedbackLoop:
 
     def test_authority_influences_ce_sampling_direction(self):
         """Higher authority → higher sampling weight in softmax."""
-        from emergo.kernel import _sample_next_ce
+        from emergo.proposal import DefaultProposalGenerator
         G = _triangle()
         A = Authority(
             scores={"A": 0.9, "B": 0.1, "C": 0.1},
             baseline=0.5,
         )
+        gen = DefaultProposalGenerator()
         rng = np.random.default_rng(0)
         counts = {"A": 0, "B": 0, "C": 0}
         for _ in range(500):
-            ce = _sample_next_ce(A, G, rng)
+            ce = gen.propose(A, G, rng)
             if ce is not None:
                 counts[ce.participants[0]] += 1
         # A should be chosen as initiator most often

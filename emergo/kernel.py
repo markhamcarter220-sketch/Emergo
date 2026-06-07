@@ -19,6 +19,7 @@ from emergo.error_computation import error_computation
 from emergo.lux import Lux
 from emergo.observer import fire_observers
 from emergo.phi_update import phi_update
+from emergo.proposal import DefaultProposalGenerator, ProposalGenerator
 from emergo.types import Authority, CoordinationEvent, Errors, Graph, PhiMap, State
 
 
@@ -66,19 +67,32 @@ def emergo_kernel(
     phi_update_interval: int = 10,
     collect_diagnostics: bool = False,
     observers: Optional[List] = None,
+    proposal_generator: Optional[ProposalGenerator] = None,
+    phi_optimizer: str = "sgd",
+    phi_lr: Optional[float] = None,
+    phi_grad_clip: float = 1.0,
+    phi_early_stop_patience: int = 5,
 ) -> Union[Tuple[State, str], Tuple[State, str, "KernelDiagnostics"]]:
     """Run the fixed-point loop until convergence or max_iterations.
 
     Each iteration (Axiom — sequential, atomic):
-      1. Sample CE from authority-weighted distribution
+      1. Sample CE via proposal_generator (default: softmax authority edge-flip)
       2. CE_Execution  → G_{t+1}
       3. ErrorComputation → per-agent errors
       4. AuthorityUpdate → A_{t+1}
       5. PhiUpdate (every phi_update_interval steps) → φ_{t+1}
 
     Args:
-      observers: Optional list of KernelObserver objects (INV-10: read-only).
-                 Observer exceptions are caught and logged, never propagated.
+      observers:              Optional list of KernelObserver objects (INV-10: read-only).
+      proposal_generator:     CE sampling strategy.  Defaults to DefaultProposalGenerator
+                              (softmax authority-weighted edge flip).  Pass any object
+                              implementing the ProposalGenerator protocol to customise
+                              CE proposals — e.g., SequenceProposalGenerator for replay
+                              or WeightedMixGenerator for blended strategies.
+      phi_optimizer:          "sgd" (default) or "adam".
+      phi_lr:                 Learning rate for phi_update.  None = use module default.
+      phi_grad_clip:          Gradient clipping magnitude for phi_update.
+      phi_early_stop_patience: Early-stopping patience for phi_update (0 = disabled).
 
     Returns:
       - (final_state, reason) when collect_diagnostics=False (default)
@@ -90,7 +104,12 @@ def emergo_kernel(
         lux = Lux()
     if rng is None:
         rng = np.random.default_rng(seed=0)
+    if proposal_generator is None:
+        proposal_generator = DefaultProposalGenerator()
     _observers: List = list(observers) if observers else []
+
+    from emergo.phi_update import _LEARNING_RATE
+    _phi_lr = phi_lr if phi_lr is not None else _LEARNING_RATE
 
     G_t, phi_t, A_t, E_history = initial_state
 
@@ -108,9 +127,9 @@ def emergo_kernel(
         # INV-10: fire observers before CE sampling (read-only snapshot)
         fire_observers(_observers, "on_iteration_start", t, state)
 
-        CE_t = _sample_next_ce(A_t, G_t, rng)
+        CE_t = proposal_generator.propose(A_t, G_t, rng)
         if CE_t is None:
-            continue  # degenerate graph; keep waiting
+            continue  # degenerate graph or exhausted sequence; keep waiting
 
         # Step 1: CE_Execution — atomic, all-or-nothing
         G_next, success, _ = ce_execute(G_t, CE_t, lux, A_t)
@@ -149,7 +168,13 @@ def emergo_kernel(
         # Step 4: PhiUpdate — joint optimization of φ and F
         phi_loss_value: Optional[float] = None
         if (t % phi_update_interval == 0) and len(g_history) >= 2:
-            phi_next, phi_loss_value = phi_update(phi_t, g_history, ce_history, E_next)
+            phi_next, phi_loss_value = phi_update(
+                phi_t, g_history, ce_history, E_next,
+                lr=_phi_lr,
+                grad_clip=phi_grad_clip,
+                optimizer=phi_optimizer,
+                early_stop_patience=phi_early_stop_patience,
+            )
             if phi_loss_value is not None:
                 fire_observers(_observers, "on_phi_updated", t, phi_loss_value)
         else:
@@ -205,50 +230,6 @@ def emergo_kernel(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-def _sample_next_ce(
-    A_t: Authority,
-    G_t: Graph,
-    rng: np.random.Generator,
-) -> Optional[CoordinationEvent]:
-    """Propose a CE biased toward high-authority agents (softmax sampling).
-
-    High authority → more likely to be the initiating agent.
-    CE alternates add_edge / remove_edge based on current adjacency state.
-    """
-    if G_t.n_agents < 2:
-        return None
-
-    agents = list(G_t.agent_ids)
-    auth_vec = np.array([A_t.get(a) for a in agents])
-
-    # Softmax over authority scores for initiator selection
-    shifted = auth_vec - auth_vec.max()
-    weights = np.exp(shifted)
-    weights /= weights.sum()
-
-    from_idx = int(rng.choice(len(agents), p=weights))
-    candidates = [i for i in range(len(agents)) if i != from_idx]
-    to_idx = int(rng.choice(candidates))
-
-    from_agent = agents[from_idx]
-    to_agent = agents[to_idx]
-
-    i, j = G_t.agent_index(from_agent), G_t.agent_index(to_agent)
-
-    if G_t.adjacency[i, j] == 0.0:
-        return CoordinationEvent(
-            event_type="add_edge",
-            participants=(from_agent, to_agent),
-            params=frozenset([("weight", float(auth_vec[from_idx]))]),
-        )
-    else:
-        return CoordinationEvent(
-            event_type="remove_edge",
-            participants=(from_agent, to_agent),
-            params=frozenset(),
-        )
-
 
 def _converged(
     error_history: List[Errors],

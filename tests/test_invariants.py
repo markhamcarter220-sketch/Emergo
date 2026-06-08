@@ -162,14 +162,17 @@ class TestInvariant3BlastRadius:
         assert not ok
         assert G_next == G
 
-    def test_phi_update_reverts_on_entanglement_violation(self):
-        """A collapsed W_phi (rank 0) must cause phi_update to revert."""
+    def test_rank_regularization_recovers_entanglement_violation(self):
+        """Rank regularization must update (not revert) W_phi from rank-0 collapse."""
         phi = make_initial_phi(d_latent=4, d_features=16, d_ce=4)
         phi.W_phi[:] = 0.0  # force rank-0 collapse
         G = _triangle()
         ce = make_ce("add_edge", ("A", "B"), weight=0.5)
-        phi_next, _ = phi_update(phi, [G, G], [ce], [], n_steps=1)
-        np.testing.assert_array_equal(phi_next.W_phi, phi.W_phi)
+        # rank_lambda > 0 injects nuclear-norm gradient, pushing W_phi away from zero
+        phi_next, _ = phi_update(phi, [G, G], [ce], [], n_steps=5, rank_lambda=0.5)
+        assert not np.allclose(phi_next.W_phi, 0.0), (
+            "rank regularization should recover W_phi from collapse, not revert"
+        )
 
     def test_removing_nonexistent_agent_fails_safely(self):
         G = _triangle()

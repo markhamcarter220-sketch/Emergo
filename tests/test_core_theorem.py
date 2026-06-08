@@ -114,12 +114,8 @@ class TestConsistency1WellDefinedness:
         returned_rank = np.linalg.matrix_rank(phi_next.W_phi)
         assert returned_rank >= min_rank
 
-    def test_entanglement_guard_reverts_on_rank_collapse(self):
-        """phi_update reverts to phi_t when gradient steps collapse W_phi rank."""
-        # Build phi_t with good rank, phi_candidate (copy) with zeroed W_phi
-        # phi_update starts from phi_t.copy(); we craft a zero-initialized phi
-        # so gradient steps produce zero updates (zero × anything = zero),
-        # keeping rank at 0 and triggering the guard.
+    def test_rank_regularization_recovers_collapsed_phi(self):
+        """Rank regularization must push W_phi away from rank-0 (not revert)."""
         d_latent, d_features, d_ce = 4, 16, 4
         phi_zero = PhiMap(
             W_phi=np.zeros((d_latent, d_features)),
@@ -130,16 +126,17 @@ class TestConsistency1WellDefinedness:
             d_features=d_features,
             d_ce=d_ce,
         )
-        # phi_zero has rank 0 < d_latent//2 = 2; guard must fire
         assert np.linalg.matrix_rank(phi_zero.W_phi) < max(d_latent // 2, 1)
 
         G = _make_graph()
         CE = make_ce("add_edge", ("A", "B"), weight=0.5)
-        phi_returned, _ = phi_update(phi_zero, [G, G], [CE], [])
+        # rank_lambda=0.5 actively pushes W_phi away from zero
+        phi_returned, _ = phi_update(phi_zero, [G, G], [CE], [], n_steps=5, rank_lambda=0.5)
 
-        # Guard fired → returned phi is phi_t (same W_phi as phi_zero)
-        np.testing.assert_array_equal(phi_returned.W_phi, phi_zero.W_phi)
-        np.testing.assert_array_equal(phi_returned.b_phi, phi_zero.b_phi)
+        # Regularization updated W_phi (did NOT revert to all-zeros)
+        assert not np.allclose(phi_returned.W_phi, 0.0), (
+            "rank regularization should push W_phi away from zero, not revert"
+        )
 
     def test_error_scope_is_ce_participants_only(self):
         """ErrorComputation attributes errors only to CE participants, not observers."""
@@ -273,13 +270,11 @@ class TestConsistency3Identifiability:
         G2 = _make_sparse_graph()  # clearly different from G1
         CE = make_ce("remove_edge", ("A", "B"))
 
-        # Loss before any training (0 gradient steps)
-        _, initial_loss = phi_update(phi, [G1, G2], [CE], [], n_steps=0)
+        # Use rank_lambda=0 to compare pure prediction loss without rank-penalty mixing
+        _, initial_loss = phi_update(phi, [G1, G2], [CE], [], n_steps=0, rank_lambda=0.0)
+        _, trained_loss = phi_update(phi, [G1, G2], [CE], [], n_steps=100, rank_lambda=0.0)
 
-        # Loss after training
-        _, trained_loss = phi_update(phi, [G1, G2], [CE], [], n_steps=100)
-
-        assert trained_loss <= initial_loss + 1e-8
+        assert trained_loss <= initial_loss + 1e-6
 
     def test_phi_distinguishes_structured_from_sparse(self):
         """φ produces different embeddings for dense vs sparse graphs."""

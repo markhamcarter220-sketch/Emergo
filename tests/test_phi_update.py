@@ -39,21 +39,41 @@ class TestPhiUpdate:
         ce_encs = np.array([encode_ce(ce, phi.d_ce) for ce in ce_hist[:T]])
         initial_loss, _ = _loss_and_grads(phi, features, ce_encs, T)
 
-        phi_next, final_loss = phi_update(phi, g_hist, ce_hist, [], n_steps=50, lr=1e-2)
+        # rank_lambda=0 isolates prediction loss (no regularization penalty mixed in)
+        phi_next, final_loss = phi_update(phi, g_hist, ce_hist, [], n_steps=50, lr=1e-2, rank_lambda=0.0)
 
         assert final_loss <= initial_loss + 1e-6, "loss must not increase"
 
-    def test_entanglement_guard_rejects_degenerate_phi(self):
-        """If W_phi collapses to rank 0, phi_update must revert to phi_t."""
+    def test_rank_regularization_recovers_degenerate_phi(self):
+        """Rank regularization must update W_phi away from all-zeros (not revert)."""
         phi = make_initial_phi(d_latent=4, d_features=16, d_ce=4)
-        # Force W_phi to be all zeros (rank 0)
-        phi.W_phi[:] = 0.0
+        phi.W_phi[:] = 0.0  # rank-0 starting point
 
         g_hist, ce_hist = _make_history(5)
-        phi_next, _ = phi_update(phi, g_hist, ce_hist, [], n_steps=1)
+        phi_next, _ = phi_update(phi, g_hist, ce_hist, [], n_steps=5, rank_lambda=0.5)
 
-        # Should have reverted to the degenerate phi_t itself
-        np.testing.assert_array_equal(phi_next.W_phi, phi.W_phi)
+        # W_phi must have been updated (not reverted to all-zeros)
+        assert not np.allclose(phi_next.W_phi, 0.0), (
+            "rank regularization should push W_phi away from zero, not revert"
+        )
+
+    def test_rank_penalty_prevents_collapse(self):
+        """After 20 gradient steps with rank_lambda=0.1, rank(W_phi) >= d_latent//2."""
+        d_latent = 4
+        phi = make_initial_phi(d_latent=d_latent, d_features=16, d_ce=4, seed=7)
+        # Degrade W_phi toward rank collapse by scaling down
+        phi.W_phi *= 0.001
+
+        g_hist, ce_hist = _make_history(10)
+        phi_next, _ = phi_update(
+            phi, g_hist, ce_hist, [], n_steps=20, rank_lambda=0.1, lr=1e-2
+        )
+
+        rank = np.linalg.matrix_rank(phi_next.W_phi, tol=1e-6)
+        min_rank = max(d_latent // 2, 1)
+        assert rank >= min_rank, (
+            f"rank={rank} < min_rank={min_rank} — regularization failed"
+        )
 
     def test_returns_phi_t_when_insufficient_history(self):
         phi = make_initial_phi()

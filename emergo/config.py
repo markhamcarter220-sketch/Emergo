@@ -48,6 +48,11 @@ PHI_GRAD_CLIP: float = float(os.getenv("EMERGO_PHI_GRAD_CLIP", "1.0"))
 PHI_EARLY_STOP_PATIENCE: int = int(os.getenv("EMERGO_PHI_EARLY_STOP", "5"))
 """Early-stopping patience steps for phi_update (0 = disabled)."""
 
+RANK_PENALTY_LAMBDA: float = float(os.getenv("EMERGO_RANK_PENALTY", "0.1"))
+"""Rank-regularization strength for phi_update nuclear-norm penalty.
+   0.0 = disabled.  Default 0.1.  See phi_update._rank_penalty_and_grad().
+"""
+
 # --- Multi-Agent Coordinator ---
 MAX_COORDINATOR_AGENTS: int = int(os.getenv("EMERGO_MAX_COORDINATOR_AGENTS", "4"))
 """Maximum number of agents that may propose simultaneously in one coordination round (INV-9)."""

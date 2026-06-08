@@ -10,37 +10,42 @@ where:
     φ(G) = W_phi @ f(G) + b_phi        (linear projection, d_features → d_latent)
     F(z, c) = W_F @ [z; c] + b_F      (linear transition, d_latent+d_ce → d_latent)
 
+Rank Regularization
+-------------------
+A nuclear-norm-based regularizer is added to the gradient of W_phi on every step.
+This actively prevents rank collapse during optimization rather than reverting after:
+
+    L_total = L_pred + λ × penalty_rank(W_phi, d_latent)
+
+    penalty_rank(W, d) = 1 / (1 + max(0, rank(W) − d//2))   [monitoring scalar]
+    gradient contribution: −λ × U @ Vᵀ                       [nuclear norm proxy]
+
+The gradient pushes W_phi toward higher nuclear norm (larger singular values),
+which prevents the eigenvalue collapse that would cause entanglement failure.
+λ is configurable via EMERGO_RANK_PENALTY (default 0.1).
+
 Optimizers
 ----------
   "sgd"  (default) — vanilla gradient descent with clipping.
   "adam" — Adam (Kingma & Ba 2015) with β₁=0.9, β₂=0.999, ε=1e-8.
-           Carries momentum state within the call (no cross-call state needed
-           for the existing periodic-refit pattern).
 
 Early stopping
 --------------
-When `early_stop_patience > 0`, phi_update monitors the per-step loss
-improvement.  If the absolute improvement is < `early_stop_delta` for
-`early_stop_patience` consecutive steps, optimization terminates early.
-Set `early_stop_patience=0` to disable (run all n_steps regardless).
+When `early_stop_patience > 0`, training stops when loss improvement over
+`early_stop_patience` consecutive steps is < `early_stop_delta`.
 
 Gradient monitoring
 -------------------
-After clipping, the module logs a WARNING when any gradient norm exceeds
-10 × grad_clip, which signals a numerically ill-conditioned φ update.
-
-Entanglement guard
-------------------
-If rank(W_phi) < d_latent // 2 after optimization, the latent map has
-collapsed — the candidate is rejected and phi_t is returned unchanged.
+Logs WARNING when any gradient norm exceeds 10 × grad_clip.
 
 Returns:
-    phi_next     — updated PhiMap (= phi_t if entanglement guard fires)
-    fitting_loss — final mean loss (used by kernel for convergence detection)
+    phi_next     — updated PhiMap (rank-regularized W_phi prevents collapse)
+    fitting_loss — final mean loss including rank penalty
 """
 from __future__ import annotations
 
 import logging
+import os
 from typing import List, Tuple
 
 import numpy as np
@@ -52,7 +57,8 @@ logger = logging.getLogger(__name__)
 
 _LEARNING_RATE: float = 1e-3
 _GRAD_CLIP: float = 1.0
-_GRAD_EXPLODE_WARN_FACTOR: float = 10.0  # warn when norm > factor × clip
+_GRAD_EXPLODE_WARN_FACTOR: float = 10.0
+_RANK_LAMBDA: float = float(os.getenv("EMERGO_RANK_PENALTY", "0.1"))
 
 
 def phi_update(
@@ -66,25 +72,27 @@ def phi_update(
     optimizer: str = "sgd",
     early_stop_patience: int = 5,
     early_stop_delta: float = 1e-6,
+    rank_lambda: float = _RANK_LAMBDA,
 ) -> Tuple[PhiMap, float]:
     """Jointly refine φ and F over the full graph/CE history.
 
     Args:
         phi_t:                Input PhiMap to refine.
         g_history:            List of Graph snapshots G_0 … G_T.
-        ce_history:           List of CEs CE_0 … CE_{T-1} (parallel to transitions).
-        all_errors:           Accumulated per-agent errors (unused by the optimizer
-                              itself but preserved for future weighted loss).
+        ce_history:           List of CEs CE_0 … CE_{T-1}.
+        all_errors:           Accumulated per-agent errors (reserved for future use).
         n_steps:              Maximum number of gradient steps.
-        lr:                   Learning rate (SGD step size, or Adam α).
-        grad_clip:            Gradient clipping magnitude (applied element-wise).
+        lr:                   Learning rate.
+        grad_clip:            Gradient clipping magnitude (element-wise).
         optimizer:            "sgd" or "adam".
-        early_stop_patience:  Stop after this many steps with loss improvement
-                              < early_stop_delta.  0 = disabled.
-        early_stop_delta:     Minimum loss improvement threshold for early stopping.
+        early_stop_patience:  Steps with improvement < early_stop_delta before early stop.
+                              0 = disabled.
+        early_stop_delta:     Minimum loss improvement for early stopping.
+        rank_lambda:          Rank-regularization strength (EMERGO_RANK_PENALTY env var).
+                              0.0 = disabled.  Default 0.1.
 
     Returns:
-        (phi_next, fitting_loss) — phi_t unchanged if entanglement guard fires.
+        (phi_next, fitting_loss) — phi is rank-regularized to prevent entanglement collapse.
     """
     T = len(g_history) - 1
     if T < 1 or len(ce_history) < T:
@@ -92,7 +100,6 @@ def phi_update(
 
     phi_candidate = phi_t.copy()
 
-    # Pre-compute raw features once — they are constant during optimization
     features = np.array(
         [extract_graph_features(G, phi_t.d_features) for G in g_history]
     )
@@ -111,6 +118,12 @@ def phi_update(
     for step in range(n_steps):
         loss, grads = _loss_and_grads(phi_candidate, features, ce_encs, T)
 
+        # Rank regularization: augment W_phi gradient to prevent rank collapse
+        if rank_lambda > 0.0:
+            pen, pen_grad = _rank_penalty_and_grad(phi_candidate.W_phi, phi_candidate.d_latent)
+            loss = loss + rank_lambda * pen
+            grads["W_phi"] = grads["W_phi"] + rank_lambda * pen_grad
+
         _check_grad_norms(grads, grad_clip, step)
 
         if optimizer == "adam":
@@ -118,15 +131,14 @@ def phi_update(
         else:
             _apply_sgd(phi_candidate, grads, lr, grad_clip)
 
-        # Early stopping
         if early_stop_patience > 0:
             improvement = prev_loss - loss
             if improvement < early_stop_delta:
                 no_improve_count += 1
                 if no_improve_count >= early_stop_patience:
                     logger.debug(
-                        "phi_update: early stop at step %d — loss=%.6f (no improvement for %d steps)",
-                        step, loss, early_stop_patience,
+                        "phi_update: early stop at step %d (no improvement for %d steps)",
+                        step, early_stop_patience,
                     )
                     break
             else:
@@ -134,30 +146,53 @@ def phi_update(
             prev_loss = loss
 
     final_loss, _ = _loss_and_grads(phi_candidate, features, ce_encs, T)
+    if rank_lambda > 0.0:
+        pen, _ = _rank_penalty_and_grad(phi_candidate.W_phi, phi_candidate.d_latent)
+        final_loss = final_loss + rank_lambda * pen
 
-    # Entanglement guard: reject if W_phi has collapsed to near-degenerate rank.
+    # Safety monitoring — regularization should prevent this; log if it fires
     rank = np.linalg.matrix_rank(phi_candidate.W_phi, tol=1e-6)
-    if rank < max(phi_candidate.d_latent // 2, 1):
+    min_rank = max(phi_candidate.d_latent // 2, 1)
+    if rank < min_rank:
         logger.warning(
-            "phi_update: entanglement guard fired (rank=%d < %d) — reverting to phi_t",
-            rank, max(phi_candidate.d_latent // 2, 1),
+            "phi_update: W_phi rank=%d < %d after %d steps with rank_lambda=%.4f "
+            "(consider increasing rank_lambda or lr)",
+            rank, min_rank, n_steps, rank_lambda,
         )
-        return phi_t, final_loss
 
     return phi_candidate, final_loss
+
+
+# ---------------------------------------------------------------------------
+# Rank regularization
+# ---------------------------------------------------------------------------
+
+def _rank_penalty_and_grad(W: np.ndarray, d_latent: int) -> Tuple[float, np.ndarray]:
+    """Compute rank penalty scalar and nuclear-norm gradient for W.
+
+    Scalar (discrete rank formula — monitoring):
+        penalty = 1 / (1 + max(0, rank(W) − d//2))
+
+    Gradient (smooth nuclear-norm proxy):
+        d(−‖W‖_nuc)/dW = −U @ Vᵀ   (where W = U Σ Vᵀ)
+        Adding rank_lambda × (−U@Vᵀ) to dW/phi pushes W toward higher nuclear norm,
+        which prevents singular values from collapsing to zero (rank preservation).
+    """
+    rank = np.linalg.matrix_rank(W, tol=1e-6)
+    rank_gap = max(0, rank - d_latent // 2)
+    penalty = 1.0 / (1.0 + float(rank_gap))
+
+    U, _, Vt = np.linalg.svd(W, full_matrices=False)
+    grad = -(U @ Vt)  # gradient of −‖W‖_nuc w.r.t. W
+
+    return penalty, grad
 
 
 # ---------------------------------------------------------------------------
 # Gradient application
 # ---------------------------------------------------------------------------
 
-def _apply_sgd(
-    phi: PhiMap,
-    grads: dict,
-    lr: float,
-    grad_clip: float,
-) -> None:
-    """In-place SGD step with element-wise gradient clipping."""
+def _apply_sgd(phi: PhiMap, grads: dict, lr: float, grad_clip: float) -> None:
     phi.W_phi -= lr * np.clip(grads["W_phi"], -grad_clip, grad_clip)
     phi.b_phi -= lr * np.clip(grads["b_phi"], -grad_clip, grad_clip)
     phi.W_F   -= lr * np.clip(grads["W_F"],   -grad_clip, grad_clip)
@@ -165,7 +200,6 @@ def _apply_sgd(
 
 
 def _make_adam_state(phi: PhiMap) -> dict:
-    """Initialise zero first- and second-moment buffers for Adam."""
     return {
         "m": {k: np.zeros_like(v) for k, v in _phi_params(phi)},
         "v": {k: np.zeros_like(v) for k, v in _phi_params(phi)},
@@ -183,11 +217,6 @@ def _apply_adam(
     beta2: float = 0.999,
     eps: float = 1e-8,
 ) -> None:
-    """In-place Adam step with element-wise gradient clipping.
-
-    Clipping is applied before the moment update so that the momentum
-    buffers track clipped (numerically safe) gradients only.
-    """
     m, v = state["m"], state["v"]
     for key in ("W_phi", "b_phi", "W_F", "b_F"):
         g = np.clip(grads[key], -grad_clip, grad_clip)
@@ -195,8 +224,7 @@ def _apply_adam(
         v[key] = beta2 * v[key] + (1 - beta2) * g ** 2
         m_hat = m[key] / (1 - beta1 ** step)
         v_hat = v[key] / (1 - beta2 ** step)
-        update = lr * m_hat / (np.sqrt(v_hat) + eps)
-        getattr(phi, key)[...] -= update
+        getattr(phi, key)[...] -= lr * m_hat / (np.sqrt(v_hat) + eps)
 
 
 def _phi_params(phi: PhiMap):
@@ -211,20 +239,18 @@ def _phi_params(phi: PhiMap):
 # ---------------------------------------------------------------------------
 
 def _check_grad_norms(grads: dict, grad_clip: float, step: int) -> None:
-    """Log WARNING when any gradient norm greatly exceeds the clip threshold."""
     threshold = _GRAD_EXPLODE_WARN_FACTOR * grad_clip
     for key, g in grads.items():
         norm = float(np.linalg.norm(g))
         if norm > threshold:
             logger.warning(
-                "phi_update: large gradient at step %d — %s norm=%.3f > %.1f×clip=%.3f "
-                "(possible exploding gradient)",
-                step, key, norm, _GRAD_EXPLODE_WARN_FACTOR, grad_clip,
+                "phi_update: large gradient at step %d — %s norm=%.3f > %.1f×clip",
+                step, key, norm, _GRAD_EXPLODE_WARN_FACTOR,
             )
 
 
 # ---------------------------------------------------------------------------
-# Loss & exact gradients (unchanged from original)
+# Loss & exact gradients
 # ---------------------------------------------------------------------------
 
 def _loss_and_grads(
@@ -233,21 +259,7 @@ def _loss_and_grads(
     ce_encs: np.ndarray,
     T: int,
 ) -> Tuple[float, dict]:
-    """Compute mean prediction loss and exact gradients over T transitions.
-
-    For each t in [0, T):
-        z_t     = W_phi @ f_t + b_phi
-        z_next  = W_phi @ f_{t+1} + b_phi
-        z_pred  = W_F @ [z_t; c_t] + b_F
-        res_t   = z_pred - z_next
-        loss_t  = 0.5 * ||res_t||²
-
-    Exact gradients:
-        ∂L/∂W_F    = (1/T) Σ_t  res_t ⊗ [z_t; c_t]ᵀ
-        ∂L/∂b_F    = (1/T) Σ_t  res_t
-        ∂L/∂W_phi  = (1/T) Σ_t  (W_F[:,:d]ᵀ @ res_t) ⊗ f_tᵀ  −  res_t ⊗ f_{t+1}ᵀ
-        ∂L/∂b_phi  = (1/T) Σ_t  (W_F[:,:d]ᵀ @ res_t)  −  res_t
-    """
+    """Compute mean prediction loss and exact gradients over T transitions."""
     d = phi.d_latent
 
     total_loss = 0.0

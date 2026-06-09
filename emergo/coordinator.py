@@ -14,12 +14,12 @@ Each accepted proposal passes through the full atomic sequence:
 Each rejected proposal writes an audit record (INV-7) but charges no
 resources (INV-6 conservation).
 """
+
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 import uuid
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 from emergo.authority_update import authority_update
 from emergo.ce_execution import ce_execute
@@ -35,12 +35,14 @@ logger = logging.getLogger(__name__)
 # Public data types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ProposedCE:
     """One agent's CE proposal, with an optional explicit priority override.
 
     If priority == 0.0 (default), the coordinator fills it from A.get(agent_id).
     """
+
     agent_id: str
     ce: CoordinationEvent
     priority: float = 0.0
@@ -49,12 +51,13 @@ class ProposedCE:
 @dataclass
 class CoordinationRound:
     """Complete record of one coordination round."""
+
     round_id: str
-    accepted: List[ProposedCE]
-    rejected: List[ProposedCE]
-    rejection_reasons: Dict[str, str]   # agent_id → human-readable reason
+    accepted: list[ProposedCE]
+    rejected: list[ProposedCE]
+    rejection_reasons: dict[str, str]  # agent_id → human-readable reason
     final_state: State
-    audit_ids: List[str]
+    audit_ids: list[str]
     n_conflicts_detected: int
 
 
@@ -62,29 +65,28 @@ class CoordinationRound:
 # Internals
 # ---------------------------------------------------------------------------
 
-def _edge_key(ce: CoordinationEvent) -> Optional[tuple]:
+
+def _edge_key(ce: CoordinationEvent) -> tuple | None:
     """Return a canonical directed-edge key for edge-touching CEs, else None."""
     if ce.event_type in ("add_edge", "remove_edge") and len(ce.participants) >= 2:
         return (ce.participants[0], ce.participants[1])
     return None
 
 
-def _detect_conflicts(sorted_proposals: List[ProposedCE]) -> Dict[str, str]:
+def _detect_conflicts(sorted_proposals: list[ProposedCE]) -> dict[str, str]:
     """Return {agent_id: reason} for lower-priority conflicting proposals.
 
     Proposals are assumed already sorted highest-priority-first.
     The first proposal that claims an edge wins; subsequent ones are conflicts.
     """
-    claimed_edges: Dict[tuple, str] = {}  # edge_key → winning agent_id
-    conflicts: Dict[str, str] = {}
+    claimed_edges: dict[tuple, str] = {}  # edge_key → winning agent_id
+    conflicts: dict[str, str] = {}
     for p in sorted_proposals:
         key = _edge_key(p.ce)
         if key is None:
             continue
         if key in claimed_edges:
-            conflicts[p.agent_id] = (
-                f"Edge {key} already claimed by {claimed_edges[key]!r}"
-            )
+            conflicts[p.agent_id] = f"Edge {key} already claimed by {claimed_edges[key]!r}"
         else:
             claimed_edges[key] = p.agent_id
     return conflicts
@@ -93,6 +95,7 @@ def _detect_conflicts(sorted_proposals: List[ProposedCE]) -> Dict[str, str]:
 # ---------------------------------------------------------------------------
 # MultiAgentCoordinator
 # ---------------------------------------------------------------------------
+
 
 class MultiAgentCoordinator:
     """Serializes parallel CE proposals from multiple agents through Lux.
@@ -118,7 +121,7 @@ class MultiAgentCoordinator:
 
     def __init__(
         self,
-        lux: Optional[Lux] = None,
+        lux: Lux | None = None,
         max_agents: int = MAX_COORDINATOR_AGENTS,
         conflict_strategy: str = COORDINATOR_CONFLICT_STRATEGY,
     ) -> None:
@@ -128,7 +131,7 @@ class MultiAgentCoordinator:
 
     def coordinate(
         self,
-        proposals: List[ProposedCE],
+        proposals: list[ProposedCE],
         state: State,
     ) -> CoordinationRound:
         """Process proposals: fill priorities, sort, detect conflicts, then apply.
@@ -143,12 +146,14 @@ class MultiAgentCoordinator:
         if len(proposals) > self._max_agents:
             logger.warning(
                 "Coordinator %s: %d proposals exceed max_agents=%d; truncating",
-                round_id[:8], len(proposals), self._max_agents,
+                round_id[:8],
+                len(proposals),
+                self._max_agents,
             )
             proposals = proposals[: self._max_agents]
 
         # INV-9: fill priorities from current authority, then sort descending
-        enriched: List[ProposedCE] = []
+        enriched: list[ProposedCE] = []
         for p in proposals:
             pri = p.priority if p.priority != 0.0 else A.get(p.agent_id)
             enriched.append(ProposedCE(agent_id=p.agent_id, ce=p.ce, priority=pri))
@@ -157,10 +162,10 @@ class MultiAgentCoordinator:
         # Detect conflicts among the sorted proposals
         conflicts = _detect_conflicts(enriched)
 
-        accepted: List[ProposedCE] = []
-        rejected: List[ProposedCE] = []
-        rejection_reasons: Dict[str, str] = {}
-        audit_ids: List[str] = []
+        accepted: list[ProposedCE] = []
+        rejected: list[ProposedCE] = []
+        rejection_reasons: dict[str, str] = {}
+        audit_ids: list[str] = []
 
         for proposal in enriched:
             agent_id = proposal.agent_id
@@ -183,7 +188,9 @@ class MultiAgentCoordinator:
                 audit_ids.append(aid)
                 logger.debug(
                     "Coordinator %s: conflict-rejected %s — %s",
-                    round_id[:8], agent_id, reason,
+                    round_id[:8],
+                    agent_id,
+                    reason,
                 )
                 continue
 
@@ -201,14 +208,16 @@ class MultiAgentCoordinator:
                 )
                 audit_ids.append(aid)
                 logger.debug(
-                    "Coordinator %s: Lux-rejected %s", round_id[:8], agent_id,
+                    "Coordinator %s: Lux-rejected %s",
+                    round_id[:8],
+                    agent_id,
                 )
                 continue
 
             # CE accepted: update errors, authority, and state
             errors = error_computation(G, G_next, phi, proposal.ce)
             A = authority_update(A, errors)
-            E_history = E_history + [errors]
+            E_history = [*E_history, errors]
             G = G_next
 
             accepted.append(proposal)

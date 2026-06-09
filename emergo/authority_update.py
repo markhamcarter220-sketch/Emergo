@@ -13,6 +13,7 @@ Agents not in errors.per_agent are unchanged (they did not participate).
 
 Invariant: A_{t+1}(a) ∈ [0,1] for all a; updates are continuous (no jumps).
 """
+
 from __future__ import annotations
 
 import numpy as np

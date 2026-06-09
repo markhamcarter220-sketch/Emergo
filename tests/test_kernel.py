@@ -1,14 +1,13 @@
 """Tests for the full fixed-point loop: state progression, convergence detection."""
+
 import numpy as np
-import pytest
 
 from emergo import (
     Graph,
-    Authority,
     Lux,
     emergo_kernel,
-    make_initial_phi,
     make_initial_authority,
+    make_initial_phi,
 )
 
 
@@ -23,10 +22,8 @@ def _small_initial_state():
 
 class TestKernel:
     def test_kernel_returns_state_tuple(self):
-        state, reason = emergo_kernel(
-            _small_initial_state(), max_iterations=20, lux=Lux()
-        )
-        G, phi, A, E_history = state
+        state, reason = emergo_kernel(_small_initial_state(), max_iterations=20, lux=Lux())
+        G, _phi, _A, _E_history = state
         assert isinstance(G, Graph)
         assert reason in {"Converged", "Max iterations reached"}
 
@@ -48,12 +45,10 @@ class TestKernel:
 
     def test_kernel_deterministic_with_same_seed(self):
         s1, r1 = emergo_kernel(
-            _small_initial_state(), max_iterations=30,
-            rng=np.random.default_rng(42)
+            _small_initial_state(), max_iterations=30, rng=np.random.default_rng(42)
         )
         s2, r2 = emergo_kernel(
-            _small_initial_state(), max_iterations=30,
-            rng=np.random.default_rng(42)
+            _small_initial_state(), max_iterations=30, rng=np.random.default_rng(42)
         )
         assert r1 == r2
         np.testing.assert_array_equal(s1[0].adjacency, s2[0].adjacency)
@@ -61,8 +56,7 @@ class TestKernel:
     def test_all_authority_bounded_throughout(self):
         """Run kernel and verify final authority is bounded."""
         state, _ = emergo_kernel(
-            _small_initial_state(), max_iterations=100,
-            rng=np.random.default_rng(7)
+            _small_initial_state(), max_iterations=100, rng=np.random.default_rng(7)
         )
         _, _, A, _ = state
         for aid, v in A.scores.items():
@@ -75,5 +69,5 @@ class TestKernel:
         phi0 = make_initial_phi(d_latent=4, d_features=16, d_ce=4)
         A0 = make_initial_authority(G0.agent_ids)
         # Single-agent graph: no CEs can be sampled; should exit cleanly
-        state, reason = emergo_kernel((G0, phi0, A0, []), max_iterations=10)
+        _state, reason = emergo_kernel((G0, phi0, A0, []), max_iterations=10)
         assert reason == "Max iterations reached"

@@ -3,6 +3,7 @@
 All values can be overridden via environment variables.
 No logic lives here — only constants and env reads.
 """
+
 from __future__ import annotations
 
 import os

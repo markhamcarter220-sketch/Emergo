@@ -8,10 +8,10 @@ Longer-running tests that verify:
   - ProposalGenerator variants converge correctly
   - Adam optimizer converges at least as well as SGD on short runs
 """
+
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from emergo import (
     DefaultProposalGenerator,
@@ -25,10 +25,10 @@ from emergo import (
 )
 from tests.conftest import make_ce
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _pentagon_state(seed: int = 7):
     """5-agent ring graph — rich enough to show convergence dynamics."""
@@ -55,11 +55,12 @@ def _authority_variance(A) -> float:
 # Authority distribution stability
 # ---------------------------------------------------------------------------
 
+
 class TestAuthorityStability:
     def test_authority_variance_stays_finite(self):
         """After 300 iterations authority variance must be finite and bounded."""
         state = _pentagon_state(1)
-        final_state, reason = emergo_kernel(
+        final_state, _reason = emergo_kernel(
             state,
             max_iterations=300,
             rng=np.random.default_rng(1),
@@ -104,6 +105,7 @@ class TestAuthorityStability:
 # CE acceptance rate
 # ---------------------------------------------------------------------------
 
+
 class TestCEAcceptance:
     def test_acceptance_rate_positive_after_300_iterations(self):
         """The system must accept at least some CEs over 300 iterations."""
@@ -133,6 +135,7 @@ class TestCEAcceptance:
 # ---------------------------------------------------------------------------
 # phi_update loss trend
 # ---------------------------------------------------------------------------
+
 
 class TestPhiLossTrend:
     def test_phi_loss_finite_throughout(self):
@@ -167,11 +170,12 @@ class TestPhiLossTrend:
 # ProposalGenerator variants
 # ---------------------------------------------------------------------------
 
+
 class TestProposalGeneratorConvergence:
     def test_default_generator_converges(self):
         state = _pentagon_state(10)
         gen = DefaultProposalGenerator()
-        final_state, reason = emergo_kernel(
+        _final_state, reason = emergo_kernel(
             state,
             max_iterations=200,
             proposal_generator=gen,
@@ -188,7 +192,7 @@ class TestProposalGeneratorConvergence:
             make_ce("add_edge", (G.agent_ids[1], G.agent_ids[2]), weight=0.5),
         ]
         gen = SequenceProposalGenerator(ces, loop=False)
-        final_state, reason = emergo_kernel(
+        _final_state, reason = emergo_kernel(
             state,
             max_iterations=10,
             proposal_generator=gen,
@@ -205,7 +209,7 @@ class TestProposalGeneratorConvergence:
             make_ce("remove_edge", (G.agent_ids[0], G.agent_ids[1])),
         ]
         gen = SequenceProposalGenerator(ces, loop=True)
-        final_state, reason = emergo_kernel(
+        _final_state, reason = emergo_kernel(
             state,
             max_iterations=20,
             proposal_generator=gen,
@@ -218,7 +222,7 @@ class TestProposalGeneratorConvergence:
         gen1 = DefaultProposalGenerator()
         gen2 = DefaultProposalGenerator()
         mix = WeightedMixGenerator([(gen1, 0.7), (gen2, 0.3)])
-        final_state, reason = emergo_kernel(
+        _final_state, reason = emergo_kernel(
             state,
             max_iterations=50,
             proposal_generator=mix,
@@ -230,6 +234,7 @@ class TestProposalGeneratorConvergence:
 # ---------------------------------------------------------------------------
 # Convergence threshold behaviour
 # ---------------------------------------------------------------------------
+
 
 class TestConvergenceThreshold:
     def test_very_loose_threshold_converges_quickly(self):
@@ -256,13 +261,13 @@ class TestConvergenceThreshold:
 
     def test_final_state_valid_after_convergence(self):
         state = _pentagon_state(22)
-        final_state, reason = emergo_kernel(
+        final_state, _reason = emergo_kernel(
             state,
             max_iterations=500,
             convergence_threshold=1e10,
             rng=np.random.default_rng(22),
         )
-        G, phi, A, E = final_state
+        G, phi, A, _E = final_state
         assert G.n_agents == 5
         assert np.isfinite(phi.W_phi).all()
         for aid in A.scores:

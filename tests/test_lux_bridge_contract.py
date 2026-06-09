@@ -16,18 +16,17 @@ The contract covers:
   - Insufficient budget returns False, does not partially deduct
   - Unknown agent has no capabilities by default
 """
+
 from __future__ import annotations
 
+from collections.abc import Generator
 import os
-from typing import Generator
 
 import pytest
 
 from emergo import (
     Graph,
-    Lux,
     make_initial_authority,
-    make_initial_phi,
 )
 from emergo.lux_bridge import (
     LuxBridge,
@@ -37,10 +36,10 @@ from emergo.lux_bridge import (
 )
 from tests.conftest import make_ce
 
-
 # ---------------------------------------------------------------------------
 # Fixture: parametrize over bridge implementations
 # ---------------------------------------------------------------------------
+
 
 def _make_simulated() -> SimulatedLuxBridge:
     return SimulatedLuxBridge(initial_budget=100.0)
@@ -48,6 +47,7 @@ def _make_simulated() -> SimulatedLuxBridge:
 
 def _make_real() -> LuxBridge:
     from emergo.lux_bridge import RealLuxBridge
+
     return RealLuxBridge()
 
 
@@ -73,8 +73,10 @@ def bridge(request) -> Generator[LuxBridge, None, None]:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _graph(n: int = 3) -> Graph:
     import numpy as np
+
     ids = tuple(f"agent{i}" for i in range(n))
     adj = np.zeros((n, n), dtype=float)
     caps = np.ones((n, 2), dtype=float) * 0.5
@@ -89,6 +91,7 @@ def _authority(G: Graph, baseline: float = 0.5):
 # validate_bridge
 # ---------------------------------------------------------------------------
 
+
 class TestValidateBridgeContract:
     def test_validate_bridge_passes(self, bridge):
         assert validate_bridge(bridge) is True
@@ -97,6 +100,7 @@ class TestValidateBridgeContract:
 # ---------------------------------------------------------------------------
 # Capability contract
 # ---------------------------------------------------------------------------
+
 
 class TestCapabilityContract:
     def test_grant_and_check_round_trip(self, bridge):
@@ -122,6 +126,7 @@ class TestCapabilityContract:
 # Resource ledger contract
 # ---------------------------------------------------------------------------
 
+
 class TestResourceLedgerContract:
     def test_deduct_succeeds_when_balance_sufficient(self, bridge):
         assert bridge.deduct_resource("a1", "compute", 10.0) is True
@@ -144,7 +149,6 @@ class TestResourceLedgerContract:
         """A failed deduction must leave the balance unchanged."""
         # Drain completely
         bridge.deduct_resource("a4", "compute", 100.0)
-        balance_before = 0.0  # we know it's 0 after full drain
         result = bridge.deduct_resource("a4", "compute", 1.0)
         assert result is False
 
@@ -156,6 +160,7 @@ class TestResourceLedgerContract:
 # ---------------------------------------------------------------------------
 # Audit contract (INV-7)
 # ---------------------------------------------------------------------------
+
 
 class TestAuditContract:
     def test_audit_returns_non_empty_string(self, bridge):
@@ -182,6 +187,7 @@ class TestAuditContract:
 # ---------------------------------------------------------------------------
 # authorize_ce contract
 # ---------------------------------------------------------------------------
+
 
 class TestAuthorizeCEContract:
     def test_unknown_participant_denied(self, bridge):

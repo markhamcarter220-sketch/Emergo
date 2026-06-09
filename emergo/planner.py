@@ -13,18 +13,18 @@ Three planners are provided:
   SequentialPlanner — ordered list of flat steps (flat, no dependencies)
   DependencyPlanner — explicit DAG of tasks; emits in topological order
 """
+
 from __future__ import annotations
 
 import uuid
-from typing import Dict, List, Set, Tuple
 
 from emergo.config import DEFAULT_TASK_COST
 from emergo.types import Authority, Goal, Graph, Task
 
-
 # ---------------------------------------------------------------------------
 # Base planner
 # ---------------------------------------------------------------------------
+
 
 class Planner:
     """Decomposes a Goal into an ordered list of Tasks.
@@ -34,7 +34,7 @@ class Planner:
     (depth increments happen in the Executor during recursive decomposition).
     """
 
-    def decompose(self, goal: Goal, G: Graph, A: Authority) -> List[Task]:
+    def decompose(self, goal: Goal, G: Graph, A: Authority) -> list[Task]:
         """Return tasks to execute for goal.  Base: single flat task."""
         return [
             Task(
@@ -53,6 +53,7 @@ class Planner:
 # Sequential planner
 # ---------------------------------------------------------------------------
 
+
 class SequentialPlanner(Planner):
     """Emits one task per step_description in an ordered list.
 
@@ -60,10 +61,10 @@ class SequentialPlanner(Planner):
     Each task requires the same capability and shares the same initiating agent.
     """
 
-    def __init__(self, steps: List[str]) -> None:
+    def __init__(self, steps: list[str]) -> None:
         self._steps = steps
 
-    def decompose(self, goal: Goal, G: Graph, A: Authority) -> List[Task]:
+    def decompose(self, goal: Goal, G: Graph, A: Authority) -> list[Task]:
         per_step_cost = goal.resource_budget / max(len(self._steps), 1)
         return [
             Task(
@@ -82,6 +83,7 @@ class SequentialPlanner(Planner):
 # ---------------------------------------------------------------------------
 # Dependency planner
 # ---------------------------------------------------------------------------
+
 
 class DependencyPlanner(Planner):
     """Decomposes a goal into explicitly dependency-ordered tasks.
@@ -104,7 +106,7 @@ class DependencyPlanner(Planner):
         result = executor.execute(goal, state)
     """
 
-    def __init__(self, steps: List[Tuple[str, str, List[str]]]) -> None:
+    def __init__(self, steps: list[tuple[str, str, list[str]]]) -> None:
         """
         Args:
             steps: List of (name, description, [dep_names]).
@@ -113,7 +115,7 @@ class DependencyPlanner(Planner):
         _validate_dag(steps)
         self._steps = steps
 
-    def decompose(self, goal: Goal, G: Graph, A: Authority) -> List[Task]:
+    def decompose(self, goal: Goal, G: Graph, A: Authority) -> list[Task]:
         per_step_cost = goal.resource_budget / max(len(self._steps), 1)
         ordered_names = _topological_sort(self._steps)
 
@@ -136,9 +138,10 @@ class DependencyPlanner(Planner):
 # DAG helpers
 # ---------------------------------------------------------------------------
 
-def _validate_dag(steps: List[Tuple[str, str, List[str]]]) -> None:
+
+def _validate_dag(steps: list[tuple[str, str, list[str]]]) -> None:
     """Raise ValueError if steps has duplicate names, unknown deps, or cycles."""
-    names: Set[str] = set()
+    names: set[str] = set()
     for name, _desc, _deps in steps:
         if name in names:
             raise ValueError(f"Duplicate task name: {name!r}")
@@ -147,20 +150,18 @@ def _validate_dag(steps: List[Tuple[str, str, List[str]]]) -> None:
     for name, _desc, deps in steps:
         for dep in deps:
             if dep not in names:
-                raise ValueError(
-                    f"Task {name!r} depends on unknown task {dep!r}"
-                )
+                raise ValueError(f"Task {name!r} depends on unknown task {dep!r}")
 
     if _has_cycle(steps):
         raise ValueError("DependencyPlanner: task dependency graph contains a cycle")
 
 
-def _has_cycle(steps: List[Tuple[str, str, List[str]]]) -> bool:
+def _has_cycle(steps: list[tuple[str, str, list[str]]]) -> bool:
     """Return True if the dependency graph contains a directed cycle."""
-    graph: Dict[str, List[str]] = {name: list(deps) for name, _, deps in steps}
+    graph: dict[str, list[str]] = {name: list(deps) for name, _, deps in steps}
     # Standard DFS cycle detection: white/gray/black coloring
     WHITE, GRAY, BLACK = 0, 1, 2
-    color: Dict[str, int] = {name: WHITE for name in graph}
+    color: dict[str, int] = {name: WHITE for name in graph}
 
     def dfs(node: str) -> bool:
         color[node] = GRAY
@@ -175,10 +176,10 @@ def _has_cycle(steps: List[Tuple[str, str, List[str]]]) -> bool:
     return any(color[name] == WHITE and dfs(name) for name in graph)
 
 
-def _topological_sort(steps: List[Tuple[str, str, List[str]]]) -> List[str]:
+def _topological_sort(steps: list[tuple[str, str, list[str]]]) -> list[str]:
     """Return names in topological order (Kahn's algorithm)."""
-    in_degree: Dict[str, int] = {name: 0 for name, _, _ in steps}
-    children: Dict[str, List[str]] = {name: [] for name, _, _ in steps}
+    in_degree: dict[str, int] = {name: 0 for name, _, _ in steps}
+    children: dict[str, list[str]] = {name: [] for name, _, _ in steps}
 
     for name, _, deps in steps:
         for dep in deps:
@@ -186,7 +187,7 @@ def _topological_sort(steps: List[Tuple[str, str, List[str]]]) -> List[str]:
             in_degree[name] += 1
 
     queue = [name for name, deg in in_degree.items() if deg == 0]
-    order: List[str] = []
+    order: list[str] = []
 
     while queue:
         node = queue.pop(0)

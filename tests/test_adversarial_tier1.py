@@ -12,31 +12,28 @@ Each test:
 Run with:
   pytest tests/test_adversarial_tier1.py -v
 """
+
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Optional
 
 import numpy as np
-import pytest
 
 from emergo import (
     Graph,
     HistoryObserver,
-    Lux,
     SequenceProposalGenerator,
     emergo_kernel,
     make_initial_authority,
     make_initial_phi,
 )
 from emergo.diagnostics import topology_entropy
-from emergo.phi_update import phi_update
-from emergo.types import Authority, CoordinationEvent, Errors, PhiMap
-
+from emergo.types import Authority, CoordinationEvent, PhiMap
 
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 def _ring(n: int, seed: int = 0):
     """Return (G0, phi0, A0) for an n-agent directed ring graph."""
@@ -70,7 +67,7 @@ def _phi_rank(phi: PhiMap) -> int:
     return int(np.linalg.matrix_rank(phi.W_phi, tol=1e-6))
 
 
-def _check_phi_safe(phi: PhiMap) -> Dict[str, bool]:
+def _check_phi_safe(phi: PhiMap) -> dict[str, bool]:
     """Programmatic Φ_safe validator from SAFETY_SPEC.md §1.3."""
     rank = _phi_rank(phi)
     row_norms = np.linalg.norm(phi.W_phi, axis=1)
@@ -98,9 +95,7 @@ class _AlternatingGenerator:
         self._b = agent_b
         self._step = 0
 
-    def propose(
-        self, A: Authority, G: Graph, rng: np.random.Generator
-    ) -> Optional[CoordinationEvent]:
+    def propose(self, A: Authority, G: Graph, rng: np.random.Generator) -> CoordinationEvent | None:
         self._step += 1
         if self._step % 2 == 0:
             return CoordinationEvent(
@@ -119,11 +114,11 @@ class _PhiObserver:
     """Captures phi state at each phi_update event for variation tracking."""
 
     def __init__(self, phi_initial: PhiMap) -> None:
-        self._phis: List[PhiMap] = [phi_initial.copy()]
-        self._iterations: List[int] = [0]
+        self._phis: list[PhiMap] = [phi_initial.copy()]
+        self._iterations: list[int] = [0]
 
     def on_iteration_start(self, t: int, state: object) -> None:
-        G, phi, A, E = state
+        _G, _phi, _A, _E = state
         # Capture phi before any update in this iteration
         pass
 
@@ -134,12 +129,12 @@ class _PhiObserver:
         pass
 
     def on_kernel_done(self, reason: str, state: object, n_iterations: int) -> None:
-        G, phi, A, E = state
+        _G, phi, _A, _E = state
         self._phis.append(phi.copy())
         self._iterations.append(n_iterations)
 
     @property
-    def phi_variations(self) -> List[float]:
+    def phi_variations(self) -> list[float]:
         return [
             _phi_frobenius_distance(self._phis[i], self._phis[i + 1])
             for i in range(len(self._phis) - 1)
@@ -149,6 +144,7 @@ class _PhiObserver:
 # ---------------------------------------------------------------------------
 # Attack 1 — Authority Monopolization
 # ---------------------------------------------------------------------------
+
 
 def test_adversarial_authority_monopolization():
     """
@@ -173,7 +169,7 @@ def test_adversarial_authority_monopolization():
     gen = SequenceProposalGenerator([attacking_ce] * 500, loop=True)
 
     obs = HistoryObserver()
-    final_state, reason = emergo_kernel(
+    final_state, _reason = emergo_kernel(
         initial_state=(G0, phi0, A0, []),
         max_iterations=500,
         proposal_generator=gen,
@@ -195,6 +191,7 @@ def test_adversarial_authority_monopolization():
     # Kept as an explicit oracle to document the implementation gap.
     if max_auth > 0.8:
         import warnings
+
         warnings.warn(
             f"INV-11 DESIRED GAP: max authority {max_auth:.4f} > 0.8. "
             "Add max_authority=0.8 to authority_update() to enforce INV-11.",
@@ -220,6 +217,7 @@ def test_adversarial_authority_monopolization():
 # Attack 2 — Recursive Self-Delegation (Self-Loops)
 # ---------------------------------------------------------------------------
 
+
 def test_adversarial_recursive_self_delegation():
     """
     Attack: Agent repeatedly proposes add_edge(self, self) to create self-loops.
@@ -241,7 +239,7 @@ def test_adversarial_recursive_self_delegation():
     gen = SequenceProposalGenerator([self_loop_ce] * 300, loop=True)
 
     obs = HistoryObserver()
-    final_state, reason = emergo_kernel(
+    final_state, _reason = emergo_kernel(
         initial_state=(G0, phi0, A0, []),
         max_iterations=300,
         proposal_generator=gen,
@@ -253,8 +251,9 @@ def test_adversarial_recursive_self_delegation():
     # INV-12 check: self-loop should NOT cause authority collapse or monopoly
     # Authority must still be distributed — not all collapsed to 0 or 1
     all_scores = list(A_final.scores.values())
-    assert all(0.0 <= s <= 1.0 for s in all_scores), \
-        f"INV-12: authority out of [0,1] range after self-loop attacks: {all_scores}"
+    assert all(
+        0.0 <= s <= 1.0 for s in all_scores
+    ), f"INV-12: authority out of [0,1] range after self-loop attacks: {all_scores}"
 
     # Topology entropy must remain positive (graph still has edges from ring init)
     entropy = topology_entropy(G_final.adjacency)
@@ -262,7 +261,7 @@ def test_adversarial_recursive_self_delegation():
 
     # Phi must remain admissible
     safe = _check_phi_safe(phi_final)
-    assert safe["I_1_rank"], f"INV-14: rank collapsed after self-loop attack"
+    assert safe["I_1_rank"], "INV-14: rank collapsed after self-loop attack"
 
     print(
         f"\n[INV-12] Self-Delegation: authority range=[{min(all_scores):.3f}, "
@@ -273,6 +272,7 @@ def test_adversarial_recursive_self_delegation():
 # ---------------------------------------------------------------------------
 # Attack 3 — Topology Lockout
 # ---------------------------------------------------------------------------
+
 
 def test_adversarial_topology_lockout():
     """
@@ -293,7 +293,7 @@ def test_adversarial_topology_lockout():
     gen = SequenceProposalGenerator([lock_ce] * 400, loop=True)
 
     obs = HistoryObserver()
-    final_state, reason = emergo_kernel(
+    final_state, _reason = emergo_kernel(
         initial_state=(G0, phi0, A0, []),
         max_iterations=400,
         proposal_generator=gen,
@@ -309,12 +309,13 @@ def test_adversarial_topology_lockout():
     # NaN / Inf check (numerical stability under repeated identical CEs)
     assert not np.any(np.isnan(phi_final.W_phi)), "NaN in W_phi after topology lockout"
     assert not np.any(np.isinf(phi_final.W_phi)), "Inf in W_phi after topology lockout"
-    assert not np.any(np.isnan(phi_final.W_F)),   "NaN in W_F after topology lockout"
+    assert not np.any(np.isnan(phi_final.W_F)), "NaN in W_F after topology lockout"
 
     # Authority bounds
     all_scores = list(A_final.scores.values())
-    assert all(0.0 <= s <= 1.0 for s in all_scores), \
-        f"Authority out of [0,1] under topology lockout: {all_scores}"
+    assert all(
+        0.0 <= s <= 1.0 for s in all_scores
+    ), f"Authority out of [0,1] under topology lockout: {all_scores}"
 
     print(
         f"\n[INV-13] Topology Lockout: entropy={entropy:.3f}, "
@@ -326,6 +327,7 @@ def test_adversarial_topology_lockout():
 # ---------------------------------------------------------------------------
 # Attack 4 — Entanglement Collapse (Force Rank-Deficient φ)
 # ---------------------------------------------------------------------------
+
 
 def test_adversarial_entanglement_collapse():
     """
@@ -345,16 +347,14 @@ def test_adversarial_entanglement_collapse():
 
     initial_rank = _phi_rank(phi_degenerate)
     # Degenerate init has near-zero rank
-    assert initial_rank <= 2, (
-        f"Test precondition: expected near-zero rank, got {initial_rank}"
-    )
+    assert initial_rank <= 2, f"Test precondition: expected near-zero rank, got {initial_rank}"
 
-    final_state, reason = emergo_kernel(
+    final_state, _reason = emergo_kernel(
         initial_state=(G0, phi_degenerate, A0, []),
         max_iterations=200,
         rng=np.random.default_rng(45),
     )
-    _, phi_final, A_final, _ = final_state
+    _, phi_final, _A_final, _ = final_state
 
     final_rank = _phi_rank(phi_final)
     min_rank = phi_final.d_latent // 2  # = 4 for d_latent=8
@@ -367,8 +367,10 @@ def test_adversarial_entanglement_collapse():
 
     # Phi must be in Φ_safe
     safe = _check_phi_safe(phi_final)
-    assert safe["I_1_rank"], f"I_1 (rank) still violated after recovery"
-    assert safe["I_2_frob"], f"I_2 (frob norm) violated: norm={np.linalg.norm(phi_final.W_phi,'fro'):.4f}"
+    assert safe["I_1_rank"], "I_1 (rank) still violated after recovery"
+    assert safe[
+        "I_2_frob"
+    ], f"I_2 (frob norm) violated: norm={np.linalg.norm(phi_final.W_phi,'fro'):.4f}"
 
     print(
         f"\n[INV-14] Entanglement Collapse: rank {initial_rank} → {final_rank} "
@@ -379,6 +381,7 @@ def test_adversarial_entanglement_collapse():
 # ---------------------------------------------------------------------------
 # Attack 5 — Capability Leakage (Authority Conservation Violation)
 # ---------------------------------------------------------------------------
+
 
 def test_adversarial_capability_leakage():
     """
@@ -392,7 +395,7 @@ def test_adversarial_capability_leakage():
     G0, phi0, A0 = _ring(n, seed=4)
 
     obs = HistoryObserver()
-    final_state, reason = emergo_kernel(
+    final_state, _reason = emergo_kernel(
         initial_state=(G0, phi0, A0, []),
         max_iterations=500,
         observers=[obs],
@@ -436,6 +439,7 @@ def test_adversarial_capability_leakage():
 # Attack 6 — Oscillatory Instability
 # ---------------------------------------------------------------------------
 
+
 def test_adversarial_oscillatory_instability():
     """
     Attack: Alternate add_edge / remove_edge for the same directed edge,
@@ -454,14 +458,14 @@ def test_adversarial_oscillatory_instability():
     gen = _AlternatingGenerator("agent_0", "agent_2")
 
     phi_obs = _PhiObserver(phi0)
-    final_state, reason = emergo_kernel(
+    final_state, _reason = emergo_kernel(
         initial_state=(G0, phi0, A0, []),
         max_iterations=200,
         proposal_generator=gen,
         observers=[phi_obs],
         rng=np.random.default_rng(47),
     )
-    _, phi_final, A_final, _ = final_state
+    _, phi_final, _A_final, _ = final_state
 
     # INV-16: phi variation must be bounded
     # ε_var = lr(1e-3) × grad_clip(1.0) × n_steps(20) × sqrt(d_latent × 2*d_latent)
@@ -480,7 +484,7 @@ def test_adversarial_oscillatory_instability():
 
     # NaN/Inf check
     assert not np.any(np.isnan(phi_final.W_phi)), "NaN in W_phi during oscillation"
-    assert not np.any(np.isnan(phi_final.W_F)),   "NaN in W_F during oscillation"
+    assert not np.any(np.isnan(phi_final.W_F)), "NaN in W_F during oscillation"
 
     print(
         f"\n[INV-16] Oscillatory Instability: total_drift={total_drift:.4f}, "
@@ -491,6 +495,7 @@ def test_adversarial_oscillatory_instability():
 # ---------------------------------------------------------------------------
 # Attack 7 — Dead Network (Zero-CE Scenario)
 # ---------------------------------------------------------------------------
+
 
 def test_adversarial_dead_network():
     """
@@ -513,29 +518,27 @@ def test_adversarial_dead_network():
         observers=[obs],
         rng=np.random.default_rng(48),
     )
-    G_final, phi_final, A_final, E_final = final_state
+    _G_final, phi_final, A_final, E_final = final_state
 
     # Kernel must exit cleanly
-    assert reason == "Max iterations reached", (
-        f"Expected 'Max iterations reached' from dead network, got: {reason}"
-    )
+    assert (
+        reason == "Max iterations reached"
+    ), f"Expected 'Max iterations reached' from dead network, got: {reason}"
 
     # State must be completely unchanged (no CEs accepted)
-    assert obs.ce_acceptance_rate == 0.0, (
-        f"Expected 0 CE acceptance in dead network, got {obs.ce_acceptance_rate:.1%}"
-    )
+    assert (
+        obs.ce_acceptance_rate == 0.0
+    ), f"Expected 0 CE acceptance in dead network, got {obs.ce_acceptance_rate:.1%}"
 
     # Authority unchanged from initial baseline
     for aid in A_final.scores:
-        assert abs(A_final.get(aid) - 0.5) < 1e-9, (
-            f"Authority of {aid} changed without any CE: {A_final.get(aid):.6f} ≠ 0.5"
-        )
+        assert (
+            abs(A_final.get(aid) - 0.5) < 1e-9
+        ), f"Authority of {aid} changed without any CE: {A_final.get(aid):.6f} ≠ 0.5"
 
     # Phi unchanged (no CEs means no g_history additions for phi_update)
     phi_drift = _phi_frobenius_distance(phi0, phi_final)
-    assert phi_drift < 1e-9, (
-        f"Phi changed without any CE: drift={phi_drift:.2e}"
-    )
+    assert phi_drift < 1e-9, f"Phi changed without any CE: drift={phi_drift:.2e}"
 
     # Error history empty (no accepted CEs)
     assert len(E_final) == 0, f"Error history non-empty without accepted CEs: {len(E_final)}"
@@ -549,6 +552,7 @@ def test_adversarial_dead_network():
 # ---------------------------------------------------------------------------
 # Attack 8 — Constraint Erosion (Boundary Probing)
 # ---------------------------------------------------------------------------
+
 
 def test_adversarial_constraint_erosion():
     """
@@ -577,7 +581,7 @@ def test_adversarial_constraint_erosion():
     gen = SequenceProposalGenerator([attacking_ce] * 200, loop=True)
 
     obs = HistoryObserver()
-    final_state, reason = emergo_kernel(
+    final_state, _reason = emergo_kernel(
         initial_state=(G0, phi0, A0, []),
         max_iterations=200,
         proposal_generator=gen,
@@ -587,11 +591,7 @@ def test_adversarial_constraint_erosion():
     _, phi_final, A_final, _ = final_state
 
     # INV-18 (hard boundary): authority MUST stay ≤ 1.0 at all times
-    all_scores_flat = [
-        score
-        for snapshot in obs.authority_history
-        for score in snapshot.values()
-    ]
+    all_scores_flat = [score for snapshot in obs.authority_history for score in snapshot.values()]
     max_ever = max(all_scores_flat) if all_scores_flat else 0.0
 
     assert max_ever <= 1.0 + 1e-9, (
@@ -605,6 +605,7 @@ def test_adversarial_constraint_erosion():
     # INV-11 note (desired): if max_ever > 0.8, document the gap
     if max_ever > 0.8:
         import warnings
+
         warnings.warn(
             f"[INV-11 gap] max authority reached {max_ever:.4f} > 0.8 during "
             "constraint erosion test. Desired: max_authority=0.8 cap in authority_update.",
@@ -622,6 +623,7 @@ def test_adversarial_constraint_erosion():
 # Composite invariant check
 # ---------------------------------------------------------------------------
 
+
 def test_all_phi_safe_invariants_hold_after_stress():
     """
     Composite test: run a diverse 500-iteration kernel and verify all Φ_safe
@@ -631,7 +633,7 @@ def test_all_phi_safe_invariants_hold_after_stress():
     n = 8
     G0, phi0, A0 = _ring(n, seed=99)
 
-    final_state, reason = emergo_kernel(
+    final_state, _reason = emergo_kernel(
         initial_state=(G0, phi0, A0, []),
         max_iterations=500,
         rng=np.random.default_rng(99),
@@ -640,18 +642,19 @@ def test_all_phi_safe_invariants_hold_after_stress():
 
     safe = _check_phi_safe(phi_final)
 
-    assert safe["I_1_rank"], (
-        f"INV-14: rank={_phi_rank(phi_final)} < {phi_final.d_latent // 2} after stress"
-    )
-    assert safe["I_2_frob"], (
-        f"INV-16: frob={np.linalg.norm(phi_final.W_phi, 'fro'):.2f} > 10.0 after stress"
-    )
-    assert safe["I_3_rows"], (
-        "INV-18: zero row in W_phi after stress"
-    )
+    assert safe[
+        "I_1_rank"
+    ], f"INV-14: rank={_phi_rank(phi_final)} < {phi_final.d_latent // 2} after stress"
+    assert safe[
+        "I_2_frob"
+    ], f"INV-16: frob={np.linalg.norm(phi_final.W_phi, 'fro'):.2f} > 10.0 after stress"
+    assert safe["I_3_rows"], "INV-18: zero row in W_phi after stress"
     assert not np.any(np.isnan(phi_final.W_phi)), "NaN in W_phi after stress"
-    assert all(0.0 <= s <= 1.0 for s in A_final.scores.values()), \
-        "INV-15: authority out of [0,1] after stress"
+    assert all(
+        0.0 <= s <= 1.0 for s in A_final.scores.values()
+    ), "INV-15: authority out of [0,1] after stress"
 
-    print(f"\n[Φ_safe composite] All invariants hold. rank={_phi_rank(phi_final)}, "
-          f"frob={np.linalg.norm(phi_final.W_phi, 'fro'):.3f}")
+    print(
+        f"\n[Φ_safe composite] All invariants hold. rank={_phi_rank(phi_final)}, "
+        f"frob={np.linalg.norm(phi_final.W_phi, 'fro'):.3f}"
+    )

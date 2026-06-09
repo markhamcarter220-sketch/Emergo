@@ -1,16 +1,16 @@
 """Tests for CE_Execution: atomicity, determinism, all CE types."""
+
 import numpy as np
 import pytest
 
 from emergo.ce_execution import ce_execute
-from emergo.types import CoordinationEvent, Graph
 from tests.conftest import make_ce
 
 
 class TestAddEdge:
     def test_adds_directed_edge(self, three_agent_graph, default_authority, lux):
         ce = make_ce("add_edge", ("A", "C"), weight=0.7)
-        G_next, ok, parts = ce_execute(three_agent_graph, ce, lux, default_authority)
+        G_next, ok, _parts = ce_execute(three_agent_graph, ce, lux, default_authority)
         assert ok
         i = G_next.agent_index("A")
         j = G_next.agent_index("C")
@@ -37,9 +37,11 @@ class TestRemoveEdge:
         i, j = G_next.agent_index("A"), G_next.agent_index("B")
         assert G_next.adjacency[i, j] == pytest.approx(0.0)
 
-    def test_nonexistent_edge_remove_still_succeeds(self, three_agent_graph, default_authority, lux):
+    def test_nonexistent_edge_remove_still_succeeds(
+        self, three_agent_graph, default_authority, lux
+    ):
         ce = make_ce("remove_edge", ("A", "C"))  # A→C does not exist
-        G_next, ok, _ = ce_execute(three_agent_graph, ce, lux, default_authority)
+        _G_next, ok, _ = ce_execute(three_agent_graph, ce, lux, default_authority)
         assert ok  # idempotent: setting 0 to 0 is fine
 
 
@@ -83,6 +85,7 @@ class TestRemoveAgent:
 class TestAuthorization:
     def test_low_authority_blocks_ce(self, three_agent_graph, lux):
         from emergo.types import Authority
+
         low_auth = Authority(scores={"A": 0.05, "B": 0.5, "C": 0.5}, baseline=0.5)
         ce = make_ce("add_edge", ("A", "C"), weight=1.0)
         _, ok, _ = ce_execute(three_agent_graph, ce, lux, low_auth)

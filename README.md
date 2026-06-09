@@ -2,7 +2,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-396%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-405%20passing-brightgreen.svg)](tests/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 > **A system where agents earn authority by accurately predicting how their
@@ -487,7 +487,7 @@ It's closer to how natural systems organize: ant colonies, neural networks, ecos
 | Async kernel | 🔲 Planned | Non-blocking `emergo_kernel_async` for integration with async frameworks |
 | Real Lux bindings | 🔲 Planned | Production `RealLuxBridge` for managed Lux infrastructure |
 | Prometheus integration | 🔲 Planned | First-class `MetricsObserver.enable_prometheus()` export |
-| Package release | 🔲 Planned | PyPI publication, versioning, changelog |
+| Package release | ✅ Done | PyPI-ready pyproject.toml, CHANGELOG, 0.2.0 release |
 
 ---
 

@@ -3,10 +3,10 @@
 State = (G_t, φ_t, A_t, E_t) — the only mutable state; all operations are pure functions.
 Task and Goal are execution-layer types defined here to avoid circular imports.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -19,8 +19,8 @@ class Graph:
     capabilities[i, :] = capability feature vector for agent_ids[i].
     """
 
-    agent_ids: tuple          # ordered tuple of agent ID strings
-    adjacency: np.ndarray     # (n, n) float — read-only after construction
+    agent_ids: tuple  # ordered tuple of agent ID strings
+    adjacency: np.ndarray  # (n, n) float — read-only after construction
     capabilities: np.ndarray  # (n, d_cap) float — read-only after construction
 
     def __post_init__(self) -> None:
@@ -69,7 +69,7 @@ class CoordinationEvent:
     participants: tuple
     params: frozenset
 
-    def get_param(self, key: str, default=None):
+    def get_param(self, key: str, default: object = None) -> object:
         return dict(self.params).get(key, default)
 
 
@@ -84,10 +84,10 @@ class PhiMap:
     F is the "Axiom 5.4.3" approximately-linear transition in φ-space.
     """
 
-    W_phi: np.ndarray   # (d_latent, d_features)
-    b_phi: np.ndarray   # (d_latent,)
-    W_F: np.ndarray     # (d_latent, d_latent + d_ce)
-    b_F: np.ndarray     # (d_latent,)
+    W_phi: np.ndarray  # (d_latent, d_features)
+    b_phi: np.ndarray  # (d_latent,)
+    W_F: np.ndarray  # (d_latent, d_latent + d_ce)
+    b_F: np.ndarray  # (d_latent,)
     d_latent: int
     d_features: int
     d_ce: int
@@ -95,12 +95,15 @@ class PhiMap:
     def embed(self, G: Graph) -> np.ndarray:
         """φ(G): project graph into latent space."""
         from emergo.features import extract_graph_features
+
         f = extract_graph_features(G, self.d_features)
-        return self.W_phi @ f + self.b_phi
+        result: np.ndarray = self.W_phi @ f + self.b_phi
+        return result
 
     def transition(self, z: np.ndarray, ce_encoding: np.ndarray) -> np.ndarray:
         """F(z, c): predict next latent state from current state and CE."""
-        return self.W_F @ np.concatenate([z, ce_encoding]) + self.b_F
+        result: np.ndarray = self.W_F @ np.concatenate([z, ce_encoding]) + self.b_F
+        return result
 
     def copy(self) -> PhiMap:
         return PhiMap(
@@ -122,8 +125,8 @@ class Authority:
     Updates are continuous (no discrete jumps); sum is not conserved by design.
     """
 
-    scores: Dict[str, float]
-    baseline: float = 0.5       # historical mean used for Δ calibration
+    scores: dict[str, float]
+    baseline: float = 0.5  # historical mean used for Δ calibration
 
     def get(self, agent_id: str) -> float:
         return float(np.clip(self.scores.get(agent_id, self.baseline), 0.0, 1.0))
@@ -139,7 +142,7 @@ class Authority:
 class Errors:
     """Per-agent L2 prediction errors from one iteration."""
 
-    per_agent: Dict[str, float]   # agent_id → error magnitude ≥ 0
+    per_agent: dict[str, float]  # agent_id → error magnitude ≥ 0
 
     def max_error(self) -> float:
         return max(self.per_agent.values()) if self.per_agent else 0.0
@@ -152,12 +155,13 @@ class Errors:
 
 # The complete mutable state of the system.  All four components are written
 # atomically by each operation; no shared mutable sub-state exists.
-State = Tuple[Graph, PhiMap, Authority, List[Errors]]
+State = tuple[Graph, PhiMap, Authority, list[Errors]]
 
 
 # ---------------------------------------------------------------------------
 # Execution-layer types (used by Executor and Planner)
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class Task:
@@ -170,12 +174,12 @@ class Task:
 
     task_id: str
     description: str
-    required_capability: str   # Lux capability name required to execute
-    initiating_agent: str      # agent ID proposing this task
+    required_capability: str  # Lux capability name required to execute
+    initiating_agent: str  # agent ID proposing this task
     resource_cost: float = 1.0
     resource_type: str = "compute"
-    depth: int = 0             # recursion depth (for INV-8)
-    parent_task_id: Optional[str] = None
+    depth: int = 0  # recursion depth (for INV-8)
+    parent_task_id: str | None = None
 
 
 @dataclass(frozen=True)

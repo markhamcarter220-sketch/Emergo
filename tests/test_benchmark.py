@@ -14,6 +14,7 @@ Key assertions per size:
   - CE acceptance rate > 0 (at least some proposals pass Lux)
   - No NumPy warnings / exceptions during the run
 """
+
 from __future__ import annotations
 
 import time
@@ -29,10 +30,10 @@ from emergo import (
     make_initial_phi,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_state(n_agents: int, seed: int = 0):
     rng = np.random.default_rng(seed)
@@ -52,6 +53,7 @@ def _make_state(n_agents: int, seed: int = 0):
 # Correctness at scale
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("n_agents", [10, 20, 50])
 def test_kernel_terminates_at_scale(n_agents):
     state = _make_state(n_agents, seed=n_agents)
@@ -63,7 +65,7 @@ def test_kernel_terminates_at_scale(n_agents):
         rng=np.random.default_rng(n_agents),
     )
     assert reason in ("Converged", "Max iterations reached")
-    G_final, _, A_final, _ = final_state
+    G_final, _, _A_final, _ = final_state
     assert G_final.n_agents == n_agents
 
 
@@ -102,11 +104,15 @@ def test_acceptance_rate_nonzero_at_scale(n_agents):
 # Performance wall-time (informational, not strictly enforced)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("n_agents,max_iter,time_limit_s", [
-    (10,  200, 30.0),
-    (20,  100, 30.0),
-    (50,  50,  60.0),
-])
+
+@pytest.mark.parametrize(
+    "n_agents,max_iter,time_limit_s",
+    [
+        (10, 200, 30.0),
+        (20, 100, 30.0),
+        (50, 50, 60.0),
+    ],
+)
 def test_kernel_wall_time(n_agents, max_iter, time_limit_s):
     """Kernel must complete within time_limit_s on the target machine."""
     state = _make_state(n_agents, seed=n_agents + 300)
@@ -117,14 +123,15 @@ def test_kernel_wall_time(n_agents, max_iter, time_limit_s):
         rng=np.random.default_rng(n_agents + 3),
     )
     elapsed = time.perf_counter() - t0
-    assert elapsed < time_limit_s, (
-        f"Kernel with {n_agents} agents took {elapsed:.1f}s > {time_limit_s}s limit"
-    )
+    assert (
+        elapsed < time_limit_s
+    ), f"Kernel with {n_agents} agents took {elapsed:.1f}s > {time_limit_s}s limit"
 
 
 # ---------------------------------------------------------------------------
 # phi_update with Adam at scale
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("n_agents", [10, 20])
 def test_adam_optimizer_at_scale(n_agents):
@@ -136,7 +143,7 @@ def test_adam_optimizer_at_scale(n_agents):
         rng=np.random.default_rng(n_agents + 4),
     )
     assert reason in ("Converged", "Max iterations reached")
-    G_final, phi_final, A_final, _ = final_state
+    G_final, phi_final, _A_final, _ = final_state
     assert G_final.n_agents == n_agents
     # W_phi must remain full-rank enough (entanglement guard)
     rank = np.linalg.matrix_rank(phi_final.W_phi)
@@ -147,10 +154,11 @@ def test_adam_optimizer_at_scale(n_agents):
 # Diagnostics at scale
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("n_agents", [10, 20])
 def test_diagnostics_at_scale(n_agents):
     state = _make_state(n_agents, seed=n_agents + 500)
-    final_state, reason, diag = emergo_kernel(
+    _final_state, _reason, diag = emergo_kernel(
         state,
         max_iterations=50,
         collect_diagnostics=True,

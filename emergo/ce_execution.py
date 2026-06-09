@@ -12,9 +12,8 @@ Execution-layer CEs (execute_task, decompose_goal, delegate) are intentionally
 rejected here — they MUST go through Executor, which enforces INV-5/6/7/8.
 Routing them through ce_execute would bypass resource deduction and audit.
 """
-from __future__ import annotations
 
-from typing import Tuple
+from __future__ import annotations
 
 import numpy as np
 
@@ -27,7 +26,7 @@ def ce_execute(
     CE: CoordinationEvent,
     lux: Lux,
     A_t: Authority,
-) -> Tuple[Graph, bool, tuple]:
+) -> tuple[Graph, bool, tuple]:
     """Apply CE to G_t, producing an immutable G_{t+1}.
 
     Returns:
@@ -114,7 +113,7 @@ def _add_agent(G: Graph, CE: CoordinationEvent, params: dict) -> Graph:
     new_caps[n] = initial_caps[:d_cap]
 
     return Graph(
-        agent_ids=G.agent_ids + (agent_id,),
+        agent_ids=(*G.agent_ids, agent_id),
         adjacency=new_adj,
         capabilities=new_caps,
     )
@@ -132,6 +131,6 @@ def _remove_agent(G: Graph, CE: CoordinationEvent, params: dict) -> Graph:
 
 
 def _writeable_copy(arr: np.ndarray) -> np.ndarray:
-    copy = arr.copy()
+    copy: np.ndarray = arr.copy()
     copy.flags.writeable = True
     return copy

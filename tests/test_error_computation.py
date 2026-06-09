@@ -1,4 +1,5 @@
 """Tests for ErrorComputation: determinism, correct error signal, per-agent tracking."""
+
 import numpy as np
 import pytest
 
@@ -12,6 +13,7 @@ class TestErrorComputation:
         ce = make_ce("add_edge", ("A", "B"), weight=1.0)
         from emergo.ce_execution import ce_execute
         from emergo.types import Authority
+
         auth = Authority(scores={"A": 0.5, "B": 0.5, "C": 0.5}, baseline=0.5)
         G_next, _, _ = ce_execute(three_agent_graph, ce, lux, auth)
         errors = error_computation(three_agent_graph, G_next, phi, ce)
@@ -21,6 +23,7 @@ class TestErrorComputation:
         ce = make_ce("remove_edge", ("A", "B"))
         from emergo.ce_execution import ce_execute
         from emergo.types import Authority
+
         auth = Authority(scores={"A": 0.5, "B": 0.5, "C": 0.5}, baseline=0.5)
         G_next, _, _ = ce_execute(three_agent_graph, ce, lux, auth)
         errors = error_computation(three_agent_graph, G_next, phi, ce)
@@ -57,9 +60,11 @@ class TestErrorComputation:
     def test_proposer_gets_global_phi_error(self, three_agent_graph, phi, lux):
         """Proposer error equals ||z_predicted - z_actual||."""
         from emergo.features import encode_ce
+
         ce = make_ce("add_edge", ("A", "B"), weight=0.5)
         from emergo.ce_execution import ce_execute
         from emergo.types import Authority
+
         auth = Authority(scores={"A": 0.5, "B": 0.5, "C": 0.5}, baseline=0.5)
         G_next, _, _ = ce_execute(three_agent_graph, ce, lux, auth)
 
@@ -76,9 +81,11 @@ class TestErrorComputation:
     def test_participant_gets_local_structural_error(self, three_agent_graph, phi, lux):
         """Non-proposing participant error equals adjacency delta norm."""
         from emergo.error_computation import _agent_local_error
+
         ce = make_ce("add_edge", ("A", "B"), weight=0.7)
         from emergo.ce_execution import ce_execute
         from emergo.types import Authority
+
         auth = Authority(scores={"A": 0.5, "B": 0.5, "C": 0.5}, baseline=0.5)
         G_next, _, _ = ce_execute(three_agent_graph, ce, lux, auth)
 
@@ -92,6 +99,7 @@ class TestErrorComputation:
         ce = make_ce("add_edge", ("A", "B"), weight=0.5)
         from emergo.ce_execution import ce_execute
         from emergo.types import Authority
+
         auth = Authority(scores={"A": 0.5, "B": 0.5, "C": 0.5}, baseline=0.5)
         G_next, success, _ = ce_execute(three_agent_graph, ce, lux, auth)
         assert success, "CE must be accepted for this test to be meaningful"

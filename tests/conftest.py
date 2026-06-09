@@ -1,25 +1,32 @@
 """Shared test fixtures."""
+
 import numpy as np
 import pytest
 
-from emergo.types import Authority, CoordinationEvent, Graph
-from emergo.kernel import make_initial_phi, make_initial_authority
+from emergo.kernel import make_initial_authority, make_initial_phi
 from emergo.lux import Lux
+from emergo.types import Authority, CoordinationEvent, Graph
 
 
 @pytest.fixture
 def three_agent_graph() -> Graph:
     """Triangle graph: A→B, B→C, C→A with unit weights."""
-    adj = np.array([
-        [0, 1, 0],
-        [0, 0, 1],
-        [1, 0, 0],
-    ], dtype=float)
-    caps = np.array([
-        [1.0, 0.0],
-        [0.5, 0.5],
-        [0.0, 1.0],
-    ], dtype=float)
+    adj = np.array(
+        [
+            [0, 1, 0],
+            [0, 0, 1],
+            [1, 0, 0],
+        ],
+        dtype=float,
+    )
+    caps = np.array(
+        [
+            [1.0, 0.0],
+            [0.5, 0.5],
+            [0.0, 1.0],
+        ],
+        dtype=float,
+    )
     return Graph(agent_ids=("A", "B", "C"), adjacency=adj, capabilities=caps)
 
 

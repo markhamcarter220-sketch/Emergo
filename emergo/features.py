@@ -11,6 +11,7 @@ Layout (d_features vector):
 All features are in [-1, 1].  Never NaN.  Always shape (d_features,).
 Handles any n_agents ≥ 0, including dynamic topology changes mid-run.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -59,8 +60,8 @@ def extract_graph_features(G: Graph, d_features: int) -> np.ndarray:
 
     if n > 0:
         sym_adj = (G.adjacency + G.adjacency.T) / 2.0
-        all_eigs = np.linalg.eigvalsh(sym_adj)          # ascending
-        all_eigs = all_eigs[::-1]                        # descending (largest first)
+        all_eigs = np.linalg.eigvalsh(sym_adj)  # ascending
+        all_eigs = all_eigs[::-1]  # descending (largest first)
         max_abs = float(np.abs(all_eigs).max())
         if max_abs > 1e-12:
             norm_eigs = all_eigs / max_abs
@@ -79,7 +80,8 @@ def extract_graph_features(G: Graph, d_features: int) -> np.ndarray:
     # Final safety: clamp NaN/Inf and enforce [-1, 1]
     out = np.nan_to_num(out, nan=0.0, posinf=1.0, neginf=-1.0)
     out = np.clip(out, -1.0, 1.0)
-    return out.astype(float)
+    result: np.ndarray = out.astype(float)
+    return result
 
 
 def _structural_metrics(G: Graph, n: int, eigs: np.ndarray) -> np.ndarray:
@@ -125,12 +127,12 @@ def _structural_metrics(G: Graph, n: int, eigs: np.ndarray) -> np.ndarray:
     # 3: weight_std normalized by 0.5 (max std for values in [0, 1] is 0.5)
     weight_std = float(adj.std()) / 0.5
 
-    # 4–5: out-degree statistics
+    # 4-5: out-degree statistics
     out_deg = adj.sum(axis=1)
     out_deg_mean = float(out_deg.mean()) / float(n)
     out_deg_std = float(out_deg.std()) / float(n)
 
-    # 6–7: capability statistics
+    # 6-7: capability statistics
     caps = G.capabilities
     if caps.size > 0:
         cap_mean = float(caps.mean())
@@ -139,16 +141,19 @@ def _structural_metrics(G: Graph, n: int, eigs: np.ndarray) -> np.ndarray:
         cap_mean = 0.0
         cap_std = 0.0
 
-    return np.array([
-        spectral_entropy,
-        edge_density,
-        mean_weight,
-        weight_std,
-        out_deg_mean,
-        out_deg_std,
-        cap_mean,
-        cap_std,
-    ], dtype=float)
+    return np.array(
+        [
+            spectral_entropy,
+            edge_density,
+            mean_weight,
+            weight_std,
+            out_deg_mean,
+            out_deg_std,
+            cap_mean,
+            cap_std,
+        ],
+        dtype=float,
+    )
 
 
 def encode_ce(CE: CoordinationEvent, d_ce: int) -> np.ndarray:
@@ -165,7 +170,7 @@ def encode_ce(CE: CoordinationEvent, d_ce: int) -> np.ndarray:
 
     if d_ce > 2:
         weight = CE.get_param("weight")
-        enc[2] = float(weight) if weight is not None else 0.0
+        enc[2] = float(weight) if weight is not None else 0.0  # type: ignore[arg-type]
 
     if d_ce > 3:
         enc[3] = float(len(CE.params)) / 10.0

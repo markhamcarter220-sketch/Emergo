@@ -9,15 +9,14 @@ Commands:
 Config precedence: CLI flags  >  env vars  >  compiled defaults
   EMERGO_AGENTS, EMERGO_ITERATIONS, EMERGO_SEED, EMERGO_OUTPUT_DIR, EMERGO_OPTIMIZER
 """
+
 from __future__ import annotations
 
+from pathlib import Path
 import pickle
 import sys
-from pathlib import Path
-from typing import List, Optional, Tuple
 
 import numpy as np
-import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import (
@@ -25,10 +24,12 @@ from rich.progress import (
     MofNCompleteColumn,
     Progress,
     SpinnerColumn,
+    TaskID,
     TextColumn,
     TimeElapsedColumn,
 )
 from rich.table import Table
+import typer
 
 console = Console()
 
@@ -61,10 +62,11 @@ app.add_typer(demo_app, name="demo")
 # Rich-powered progress observer  (INV-10 safe — exceptions never propagate)
 # ---------------------------------------------------------------------------
 
+
 class _RichProgressObserver:
     """Drives a Rich progress bar from inside the kernel loop."""
 
-    def __init__(self, progress: Progress, task_id: int, max_iters: int) -> None:
+    def __init__(self, progress: Progress, task_id: TaskID, max_iters: int) -> None:
         self._progress = progress
         self._task_id = task_id
         self._max_iters = max_iters
@@ -89,7 +91,8 @@ class _RichProgressObserver:
 # Shared helpers
 # ---------------------------------------------------------------------------
 
-def _build_ring(n: int):
+
+def _build_ring(n: int) -> tuple:
     """Return (G0, phi0, A0) for an n-agent directed ring graph."""
     from emergo import Graph, make_initial_authority, make_initial_phi
 
@@ -104,7 +107,10 @@ def _build_ring(n: int):
     return G0, phi0, A0
 
 
-def _authority_table(A, title: str = "Final Authority") -> Table:
+def _authority_table(A: object, title: str = "Final Authority") -> Table:
+    from emergo import Authority
+
+    assert isinstance(A, Authority)
     table = Table(title=title, header_style="bold magenta", show_header=True)
     table.add_column("Agent", style="cyan", no_wrap=True)
     table.add_column("Score", justify="right")
@@ -117,8 +123,11 @@ def _authority_table(A, title: str = "Final Authority") -> Table:
     return table
 
 
-def _summary_panel(reason: str, n_agents: int, n_iters: int, obs) -> Panel:
-    rows: List[Tuple[str, str]] = [
+def _summary_panel(reason: str, n_agents: int, n_iters: int, obs: object) -> Panel:
+    from emergo import HistoryObserver
+
+    assert isinstance(obs, HistoryObserver)
+    rows: list[tuple[str, str]] = [
         ("Termination", reason),
         ("Agents", str(n_agents)),
         ("Max iterations", str(n_iters)),
@@ -126,7 +135,7 @@ def _summary_panel(reason: str, n_agents: int, n_iters: int, obs) -> Panel:
     ]
     if obs.phi_losses:
         losses = [loss for _, loss in obs.phi_losses]
-        rows.append(("φ loss (first → last)", f"{losses[0]:.5f} → {losses[-1]:.5f}"))
+        rows.append(("phi loss (first -> last)", f"{losses[0]:.5f} -> {losses[-1]:.5f}"))
     inner = Table(show_header=False, box=None, padding=(0, 2))
     inner.add_column(style="bold")
     inner.add_column()
@@ -151,6 +160,7 @@ def _make_progress(total: int) -> Progress:
 # emergo run
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def run(
     agents: int = typer.Option(
@@ -160,23 +170,28 @@ def run(
         2000, "--iterations", "-i", envvar="EMERGO_ITERATIONS", help="Max kernel iterations"
     ),
     seed: int = typer.Option(0, "--seed", envvar="EMERGO_SEED", help="RNG seed"),
-    output_dir: Optional[Path] = typer.Option(
-        None, "--output-dir", "-o", envvar="EMERGO_OUTPUT_DIR",
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        "-o",
+        envvar="EMERGO_OUTPUT_DIR",
         help="Save diagnostics pickle and plots here",
     ),
     collect_diagnostics: bool = typer.Option(
-        False, "--collect-diagnostics/--no-collect-diagnostics",
+        False,
+        "--collect-diagnostics/--no-collect-diagnostics",
         help="Record per-iteration diagnostics (required for --viz)",
     ),
     do_viz: bool = typer.Option(
-        False, "--viz/--no-viz",
+        False,
+        "--viz/--no-viz",
         help="Auto-generate plots after the run (requires [viz] extra)",
     ),
     optimizer: str = typer.Option(
         "sgd", "--optimizer", envvar="EMERGO_OPTIMIZER", help="φ optimizer: sgd or adam"
     ),
     threshold: float = typer.Option(1e-4, "--threshold", help="Convergence plateau threshold"),
-    phi_lr: Optional[float] = typer.Option(None, "--phi-lr", help="φ learning rate override"),
+    phi_lr: float | None = typer.Option(None, "--phi-lr", help="φ learning rate override"),
 ) -> None:
     """Run the Emergo kernel loop on a ring graph.
 
@@ -206,9 +221,9 @@ def run(
         )
 
     if need_diag:
-        final_state, reason, diag = result
+        final_state, reason, diag = result  # type: ignore[misc]
     else:
-        final_state, reason = result
+        final_state, reason = result  # type: ignore[misc]
         diag = None
 
     _, _, A_final, _ = final_state
@@ -243,21 +258,32 @@ def run(
 # emergo viz
 # ---------------------------------------------------------------------------
 
+
 @app.command("viz")
 def viz_cmd(
-    input_file: Optional[Path] = typer.Option(
-        None, "--input", "-i",
+    input_file: Path | None = typer.Option(
+        None,
+        "--input",
+        "-i",
         help="Diagnostics pickle saved by `emergo run --collect-diagnostics -o <dir>`",
     ),
     output_dir: Path = typer.Option(
-        Path("emergo_viz_output"), "--output-dir", "-o",
+        Path("emergo_viz_output"),
+        "--output-dir",
+        "-o",
         help="Directory to write PNG plots",
     ),
     agents: int = typer.Option(
-        5, "--agents", "-n", envvar="EMERGO_AGENTS", help="Agents for fresh run (ignored with --input)"
+        5,
+        "--agents",
+        "-n",
+        envvar="EMERGO_AGENTS",
+        help="Agents for fresh run (ignored with --input)",
     ),
     iterations: int = typer.Option(
-        300, "--iterations", envvar="EMERGO_ITERATIONS",
+        300,
+        "--iterations",
+        envvar="EMERGO_ITERATIONS",
         help="Iterations for fresh run (ignored with --input)",
     ),
     seed: int = typer.Option(0, "--seed", envvar="EMERGO_SEED"),
@@ -268,9 +294,9 @@ def viz_cmd(
     """
     try:
         from emergo.visualize import render_health_dashboard
-    except ImportError:
+    except ImportError as err:
         console.print("[red]Error: viz extra not installed. Run: pip install 'emergo[viz]'[/red]")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from err
 
     if input_file is not None:
         console.print(f"[cyan]Loading diagnostics from {input_file}[/cyan]")
@@ -293,7 +319,7 @@ def viz_cmd(
         G0, phi0, A0 = _build_ring(agents)
         with _make_progress(iterations) as prog:
             tid = prog.add_task("[cyan]Collecting data[/cyan]", total=iterations)
-            final_state, _reason, diag = emergo_kernel(
+            final_state, _reason, diag = emergo_kernel(  # type: ignore[misc]
                 initial_state=(G0, phi0, A0, []),
                 max_iterations=iterations,
                 collect_diagnostics=True,
@@ -313,9 +339,12 @@ def viz_cmd(
 # emergo health
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def health(
-    agents: int = typer.Option(5, "--agents", "-n", envvar="EMERGO_AGENTS", help="Number of agents"),
+    agents: int = typer.Option(
+        5, "--agents", "-n", envvar="EMERGO_AGENTS", help="Number of agents"
+    ),
     iterations: int = typer.Option(
         200, "--iterations", "-i", envvar="EMERGO_ITERATIONS", help="Max iterations"
     ),
@@ -333,7 +362,7 @@ def health(
         transient=True,
     ) as prog:
         prog.add_task("health", total=None)
-        final_state, reason, diag = emergo_kernel(
+        final_state, reason, diag = emergo_kernel(  # type: ignore[misc]
             initial_state=(G0, phi0, A0, []),
             max_iterations=iterations,
             collect_diagnostics=True,
@@ -366,9 +395,7 @@ def health(
 
     failures = [r for r in results if r.failure_detected]
     if failures:
-        body = "\n".join(
-            f"[bold]{r.name}:[/bold] {r.recommendation}" for r in failures
-        )
+        body = "\n".join(f"[bold]{r.name}:[/bold] {r.recommendation}" for r in failures)
         console.print(Panel(body, title="[red]Recommendations[/red]", border_style="red"))
     else:
         console.print(
@@ -383,6 +410,7 @@ def health(
 # emergo demo convergence
 # ---------------------------------------------------------------------------
 
+
 @demo_app.command("convergence")
 def demo_convergence(
     agents: int = typer.Option(5, "--agents", "-n", help="Number of agents"),
@@ -393,18 +421,20 @@ def demo_convergence(
     """Classic convergence: watch φ loss and authority evolve on a ring graph."""
     from emergo import HistoryObserver, emergo_kernel
 
-    console.print(Panel(
-        f"[bold]Convergence Demo[/bold]\n"
-        f"{agents} agents · {iterations} max iterations · "
-        f"optimizer=[cyan]{optimizer}[/cyan]",
-        border_style="cyan",
-    ))
+    console.print(
+        Panel(
+            f"[bold]Convergence Demo[/bold]\n"
+            f"{agents} agents · {iterations} max iterations · "
+            f"optimizer=[cyan]{optimizer}[/cyan]",
+            border_style="cyan",
+        )
+    )
     G0, phi0, A0 = _build_ring(agents)
     obs = HistoryObserver()
 
     with _make_progress(iterations) as prog:
         tid = prog.add_task("[cyan]Converging[/cyan]", total=iterations)
-        final_state, reason = emergo_kernel(
+        final_state, reason = emergo_kernel(  # type: ignore[misc]
             initial_state=(G0, phi0, A0, []),
             max_iterations=iterations,
             phi_optimizer=optimizer,
@@ -421,6 +451,7 @@ def demo_convergence(
 # emergo demo multi-agent
 # ---------------------------------------------------------------------------
 
+
 @demo_app.command("multi-agent")
 def demo_multi_agent(
     agents: int = typer.Option(6, "--agents", "-n", help="Number of agents"),
@@ -432,16 +463,18 @@ def demo_multi_agent(
     from emergo.coordinator import ProposedCE
     from emergo.types import CoordinationEvent
 
-    console.print(Panel(
-        f"[bold]Multi-Agent Coordination Demo[/bold]\n"
-        f"{agents} agents · {rounds} coordination rounds",
-        border_style="magenta",
-    ))
+    console.print(
+        Panel(
+            f"[bold]Multi-Agent Coordination Demo[/bold]\n"
+            f"{agents} agents · {rounds} coordination rounds",
+            border_style="magenta",
+        )
+    )
 
     G0, phi0, A0 = _build_ring(agents)
 
     # Brief warm-up to build a non-uniform authority distribution before coordinating
-    final_state, _ = emergo_kernel(
+    final_state, _ = emergo_kernel(  # type: ignore[misc]
         initial_state=(G0, phi0, A0, []),
         max_iterations=50,
         rng=np.random.default_rng(seed),
@@ -462,7 +495,7 @@ def demo_multi_agent(
         ids_list = list(G_curr.agent_ids)
         rng.shuffle(ids_list)
 
-        proposals: List[ProposedCE] = []
+        proposals: list[ProposedCE] = []
         n_proposers = min(len(ids_list), 3)
         for k in range(n_proposers):
             proposer = ids_list[k]
@@ -480,13 +513,9 @@ def demo_multi_agent(
         top = result.accepted[0].agent_id if result.accepted else "—"
         ce_type = result.accepted[0].ce.event_type if result.accepted else "—"
         acc_label = (
-            f"[green]{len(result.accepted)} ✓[/green]"
-            if result.accepted
-            else "[red]0 ✗[/red]"
+            f"[green]{len(result.accepted)} ✓[/green]" if result.accepted else "[red]0 ✗[/red]"
         )
-        table.add_row(
-            str(round_num), top, ce_type, acc_label, str(result.n_conflicts_detected)
-        )
+        table.add_row(str(round_num), top, ce_type, acc_label, str(result.n_conflicts_detected))
 
     console.print(table)
     _, _, A_final, _ = final_state
@@ -496,6 +525,7 @@ def demo_multi_agent(
 # ---------------------------------------------------------------------------
 # emergo demo executor
 # ---------------------------------------------------------------------------
+
 
 @demo_app.command("executor")
 def demo_executor(
@@ -507,10 +537,10 @@ def demo_executor(
     console.print(Panel("[bold]Executor + DependencyPlanner Demo[/bold]", border_style="blue"))
 
     steps = [
-        ("fetch",     "Retrieve source documents",  []),
-        ("extract",   "Extract key entities",        ["fetch"]),
-        ("summarize", "Write summary draft",         ["extract"]),
-        ("validate",  "Validate draft for accuracy", ["summarize", "extract"]),
+        ("fetch", "Retrieve source documents", []),
+        ("extract", "Extract key entities", ["fetch"]),
+        ("summarize", "Write summary draft", ["extract"]),
+        ("validate", "Validate draft for accuracy", ["summarize", "extract"]),
     ]
     planner = DependencyPlanner(steps=steps)
     goal = Goal(
@@ -523,7 +553,7 @@ def demo_executor(
     )
 
     G0, phi0, A0 = _build_ring(5)
-    final_state, _ = emergo_kernel(
+    final_state, _ = emergo_kernel(  # type: ignore[misc]
         initial_state=(G0, phi0, A0, []),
         max_iterations=100,
         rng=np.random.default_rng(seed),
@@ -558,6 +588,7 @@ def demo_executor(
 # emergo demo stress
 # ---------------------------------------------------------------------------
 
+
 @demo_app.command("stress")
 def demo_stress(
     agents: int = typer.Option(20, "--agents", "-n", help="Number of agents"),
@@ -567,18 +598,19 @@ def demo_stress(
     """Stress test: large graph, default CE proposals, 8-detector failure-mode report."""
     from emergo import HistoryObserver, emergo_kernel, run_health_check
 
-    console.print(Panel(
-        f"[bold red]Stress Test Demo[/bold red]\n"
-        f"{agents} agents · {iterations} iterations",
-        border_style="red",
-    ))
+    console.print(
+        Panel(
+            f"[bold red]Stress Test Demo[/bold red]\n" f"{agents} agents · {iterations} iterations",
+            border_style="red",
+        )
+    )
 
     G0, phi0, A0 = _build_ring(agents)
     obs = HistoryObserver()
 
     with _make_progress(iterations) as prog:
         tid = prog.add_task("[red]Stress testing[/red]", total=iterations)
-        final_state, reason, diag = emergo_kernel(
+        final_state, reason, diag = emergo_kernel(  # type: ignore[misc]
             initial_state=(G0, phi0, A0, []),
             max_iterations=iterations,
             observers=[obs, _RichProgressObserver(prog, tid, iterations)],
@@ -621,6 +653,7 @@ def demo_stress(
 # These wrappers preserve the old CLI interface after the Typer upgrade.
 # ---------------------------------------------------------------------------
 
+
 def _legacy_demo() -> None:
     """emergo-demo: maps to `emergo demo convergence --agents 5 --iterations 500`."""
     sys.argv = ["emergo", "demo", "convergence", "--agents", "5", "--iterations", "500"]
@@ -629,19 +662,20 @@ def _legacy_demo() -> None:
 
 def _legacy_kernel() -> None:
     """emergo-kernel [flags]: maps to `emergo run [flags]`."""
-    sys.argv = ["emergo", "run"] + sys.argv[1:]
+    sys.argv = ["emergo", "run", *sys.argv[1:]]
     app()
 
 
 def _legacy_health() -> None:
     """emergo-health [flags]: maps to `emergo health [flags]`."""
-    sys.argv = ["emergo", "health"] + sys.argv[1:]
+    sys.argv = ["emergo", "health", *sys.argv[1:]]
     app()
 
 
 # ---------------------------------------------------------------------------
 # Entry point for `python -m emergo`
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     app()

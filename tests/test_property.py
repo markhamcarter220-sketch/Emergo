@@ -10,29 +10,29 @@ hand-crafted examples.  Coverage categories:
   - ce_execute is all-or-nothing (adjacency either unchanged or single mutation)
   - authority_update output bounded regardless of extreme error values
 """
+
 from __future__ import annotations
 
-import numpy as np
-import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
+import numpy as np
 
 from emergo import (
     Graph,
     Lux,
-    ce_execute,
     authority_update,
+    ce_execute,
     error_computation,
     make_initial_authority,
     make_initial_phi,
 )
-from emergo.types import Authority, CoordinationEvent, Errors
+from emergo.types import Authority, Errors
 from tests.conftest import make_ce
-
 
 # ---------------------------------------------------------------------------
 # Strategies
 # ---------------------------------------------------------------------------
+
 
 @st.composite
 def graph_strategy(draw, min_agents=2, max_agents=6):
@@ -54,8 +54,7 @@ def graph_strategy(draw, min_agents=2, max_agents=6):
 @st.composite
 def authority_strategy(draw, agent_ids):
     scores = {
-        aid: draw(st.floats(min_value=0.0, max_value=1.0,
-                             allow_nan=False, allow_infinity=False))
+        aid: draw(st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False))
         for aid in agent_ids
     }
     return Authority(scores=scores, baseline=0.5)
@@ -64,8 +63,7 @@ def authority_strategy(draw, agent_ids):
 @st.composite
 def errors_strategy(draw, agent_ids):
     per_agent = {
-        aid: draw(st.floats(min_value=0.0, max_value=10.0,
-                             allow_nan=False, allow_infinity=False))
+        aid: draw(st.floats(min_value=0.0, max_value=10.0, allow_nan=False, allow_infinity=False))
         for aid in agent_ids
     }
     return Errors(per_agent=per_agent)
@@ -74,6 +72,7 @@ def errors_strategy(draw, agent_ids):
 # ---------------------------------------------------------------------------
 # CE_execute: immutability
 # ---------------------------------------------------------------------------
+
 
 class TestCEExecuteProperties:
     @given(G=graph_strategy(), weight=st.floats(0.01, 1.0, allow_nan=False, allow_infinity=False))
@@ -134,12 +133,14 @@ class TestCEExecuteProperties:
 # authority_update: bounds
 # ---------------------------------------------------------------------------
 
+
 class TestAuthorityUpdateProperties:
     @given(
         n=st.integers(min_value=1, max_value=8),
         errors=st.lists(
             st.floats(min_value=0.0, max_value=100.0, allow_nan=False, allow_infinity=False),
-            min_size=1, max_size=8,
+            min_size=1,
+            max_size=8,
         ),
         eta=st.floats(min_value=0.001, max_value=0.5, allow_nan=False, allow_infinity=False),
     )
@@ -156,8 +157,7 @@ class TestAuthorityUpdateProperties:
 
     @given(
         n=st.integers(min_value=2, max_value=6),
-        baseline=st.floats(min_value=0.1, max_value=0.9,
-                            allow_nan=False, allow_infinity=False),
+        baseline=st.floats(min_value=0.1, max_value=0.9, allow_nan=False, allow_infinity=False),
     )
     @settings(max_examples=100)
     def test_authority_update_does_not_mutate_input(self, n, baseline):
@@ -172,6 +172,7 @@ class TestAuthorityUpdateProperties:
 # ---------------------------------------------------------------------------
 # Error computation: non-negative
 # ---------------------------------------------------------------------------
+
 
 class TestErrorComputationProperties:
     @given(G=graph_strategy())
@@ -207,6 +208,7 @@ class TestErrorComputationProperties:
 # ---------------------------------------------------------------------------
 # PhiMap.copy: independence
 # ---------------------------------------------------------------------------
+
 
 class TestPhiMapCopy:
     @given(seed=st.integers(min_value=0, max_value=999))

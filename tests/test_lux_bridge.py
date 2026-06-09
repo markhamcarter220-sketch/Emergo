@@ -3,12 +3,14 @@
 Covers: capability management, atomic resource ledger, CE authorization,
 audit trail, fail-closed behavior, and the reserve_resources flag.
 """
+
 import threading
+
 import numpy as np
 import pytest
 
-from emergo.lux_bridge import SimulatedLuxBridge, AuthResult
-from emergo.types import Authority, CoordinationEvent, Graph
+from emergo.lux_bridge import SimulatedLuxBridge
+from emergo.types import Authority, Graph
 from tests.conftest import make_ce
 
 
@@ -26,6 +28,7 @@ def _auth(scores=None) -> Authority:
 # ---------------------------------------------------------------------------
 # Capability management
 # ---------------------------------------------------------------------------
+
 
 class TestCapabilities:
     def test_grant_and_check(self):
@@ -52,6 +55,7 @@ class TestCapabilities:
 # ---------------------------------------------------------------------------
 # Resource ledger
 # ---------------------------------------------------------------------------
+
 
 class TestResourceLedger:
     def test_initial_budget(self):
@@ -98,8 +102,10 @@ class TestResourceLedger:
 
         t1 = threading.Thread(target=try_deduct)
         t2 = threading.Thread(target=try_deduct)
-        t1.start(); t2.start()
-        t1.join(); t2.join()
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
 
         # Exactly one thread should have succeeded
         assert results.count(True) == 1
@@ -110,6 +116,7 @@ class TestResourceLedger:
 # ---------------------------------------------------------------------------
 # CE Authorization — structural CEs
 # ---------------------------------------------------------------------------
+
 
 class TestAuthorizeStructural:
     def test_add_edge_authorized(self):
@@ -158,6 +165,7 @@ class TestAuthorizeStructural:
 # CE Authorization — execute_task CEs
 # ---------------------------------------------------------------------------
 
+
 class TestAuthorizeExecuteTask:
     def test_execute_task_authorized_with_capability_and_budget(self):
         b = SimulatedLuxBridge(initial_budget=100.0)
@@ -165,8 +173,11 @@ class TestAuthorizeExecuteTask:
         G = _graph()
         A = _auth()
         ce = make_ce(
-            "execute_task", ("A",),
-            capability="cap_x", resource_cost=5.0, resource="compute",
+            "execute_task",
+            ("A",),
+            capability="cap_x",
+            resource_cost=5.0,
+            resource="compute",
         )
         r = b.authorize_ce(ce, G, A, reserve_resources=True)
         assert r.authorized
@@ -178,8 +189,11 @@ class TestAuthorizeExecuteTask:
         G = _graph()
         A = _auth()
         ce = make_ce(
-            "execute_task", ("A",),
-            capability="cap_x", resource_cost=1.0, resource="compute",
+            "execute_task",
+            ("A",),
+            capability="cap_x",
+            resource_cost=1.0,
+            resource="compute",
         )
         r = b.authorize_ce(ce, G, A, reserve_resources=True)
         assert not r.authorized
@@ -191,8 +205,11 @@ class TestAuthorizeExecuteTask:
         G = _graph()
         A = _auth()
         ce = make_ce(
-            "execute_task", ("A",),
-            capability="cap_x", resource_cost=10.0, resource="compute",
+            "execute_task",
+            ("A",),
+            capability="cap_x",
+            resource_cost=10.0,
+            resource="compute",
         )
         r = b.authorize_ce(ce, G, A, reserve_resources=True)
         assert not r.authorized
@@ -206,8 +223,11 @@ class TestAuthorizeExecuteTask:
         G = _graph()
         A = _auth()
         ce = make_ce(
-            "execute_task", ("A",),
-            capability="cap_x", resource_cost=5.0, resource="compute",
+            "execute_task",
+            ("A",),
+            capability="cap_x",
+            resource_cost=5.0,
+            resource="compute",
         )
         r = b.authorize_ce(ce, G, A, reserve_resources=False)
         # Authorized (capability present) but no deduction
@@ -219,6 +239,7 @@ class TestAuthorizeExecuteTask:
 # ---------------------------------------------------------------------------
 # Audit trail
 # ---------------------------------------------------------------------------
+
 
 class TestAuditTrail:
     def test_audit_produces_record(self):

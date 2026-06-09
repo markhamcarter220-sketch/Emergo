@@ -17,6 +17,7 @@ gain, preventing monotonic authority decrease.
 Invariant: error_computation is pure and deterministic; it reads phi_t but never
 modifies it.
 """
+
 from __future__ import annotations
 
 import numpy as np

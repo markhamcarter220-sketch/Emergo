@@ -15,10 +15,10 @@ Rank Regularization
 A nuclear-norm-based regularizer is added to the gradient of W_phi on every step.
 This actively prevents rank collapse during optimization rather than reverting after:
 
-    L_total = L_pred + λ × penalty_rank(W_phi, d_latent)
+    L_total = L_pred + lambda * penalty_rank(W_phi, d_latent)
 
-    penalty_rank(W, d) = 1 / (1 + max(0, rank(W) − d//2))   [monitoring scalar]
-    gradient contribution: −λ × U @ Vᵀ                       [nuclear norm proxy]
+    penalty_rank(W, d) = 1 / (1 + max(0, rank(W) - d//2))   [monitoring scalar]
+    gradient contribution: -lambda * U @ Vt                   [nuclear norm proxy]
 
 The gradient pushes W_phi toward higher nuclear norm (larger singular values),
 which prevents the eigenvalue collapse that would cause entanglement failure.
@@ -36,17 +36,18 @@ When `early_stop_patience > 0`, training stops when loss improvement over
 
 Gradient monitoring
 -------------------
-Logs WARNING when any gradient norm exceeds 10 × grad_clip.
+Logs WARNING when any gradient norm exceeds 10x grad_clip.
 
 Returns:
     phi_next     — updated PhiMap (rank-regularized W_phi prevents collapse)
     fitting_loss — final mean loss including rank penalty
 """
+
 from __future__ import annotations
 
+from collections.abc import Iterator
 import logging
 import os
-from typing import List, Tuple
 
 import numpy as np
 
@@ -63,9 +64,9 @@ _RANK_LAMBDA: float = float(os.getenv("EMERGO_RANK_PENALTY", "0.1"))
 
 def phi_update(
     phi_t: PhiMap,
-    g_history: List[Graph],
-    ce_history: List[CoordinationEvent],
-    all_errors: List[Errors],
+    g_history: list[Graph],
+    ce_history: list[CoordinationEvent],
+    all_errors: list[Errors],
     n_steps: int = 20,
     lr: float = _LEARNING_RATE,
     grad_clip: float = _GRAD_CLIP,
@@ -73,7 +74,7 @@ def phi_update(
     early_stop_patience: int = 5,
     early_stop_delta: float = 1e-6,
     rank_lambda: float = _RANK_LAMBDA,
-) -> Tuple[PhiMap, float]:
+) -> tuple[PhiMap, float]:
     """Jointly refine φ and F over the full graph/CE history.
 
     Args:
@@ -100,12 +101,8 @@ def phi_update(
 
     phi_candidate = phi_t.copy()
 
-    features = np.array(
-        [extract_graph_features(G, phi_t.d_features) for G in g_history]
-    )
-    ce_encs = np.array(
-        [encode_ce(ce, phi_t.d_ce) for ce in ce_history[:T]]
-    )
+    features = np.array([extract_graph_features(G, phi_t.d_features) for G in g_history])
+    ce_encs = np.array([encode_ce(ce, phi_t.d_ce) for ce in ce_history[:T]])
 
     if optimizer == "adam":
         state = _make_adam_state(phi_candidate)
@@ -127,6 +124,7 @@ def phi_update(
         _check_grad_norms(grads, grad_clip, step)
 
         if optimizer == "adam":
+            assert state is not None
             _apply_adam(phi_candidate, grads, state, step + 1, lr, grad_clip)
         else:
             _apply_sgd(phi_candidate, grads, lr, grad_clip)
@@ -138,7 +136,8 @@ def phi_update(
                 if no_improve_count >= early_stop_patience:
                     logger.debug(
                         "phi_update: early stop at step %d (no improvement for %d steps)",
-                        step, early_stop_patience,
+                        step,
+                        early_stop_patience,
                     )
                     break
             else:
@@ -157,7 +156,10 @@ def phi_update(
         logger.warning(
             "phi_update: W_phi rank=%d < %d after %d steps with rank_lambda=%.4f "
             "(consider increasing rank_lambda or lr)",
-            rank, min_rank, n_steps, rank_lambda,
+            rank,
+            min_rank,
+            n_steps,
+            rank_lambda,
         )
 
     return phi_candidate, final_loss
@@ -167,15 +169,16 @@ def phi_update(
 # Rank regularization
 # ---------------------------------------------------------------------------
 
-def _rank_penalty_and_grad(W: np.ndarray, d_latent: int) -> Tuple[float, np.ndarray]:
+
+def _rank_penalty_and_grad(W: np.ndarray, d_latent: int) -> tuple[float, np.ndarray]:
     """Compute rank penalty scalar and nuclear-norm gradient for W.
 
-    Scalar (discrete rank formula — monitoring):
-        penalty = 1 / (1 + max(0, rank(W) − d//2))
+    Scalar (discrete rank formula -- monitoring):
+        penalty = 1 / (1 + max(0, rank(W) - d//2))
 
     Gradient (smooth nuclear-norm proxy):
-        d(−‖W‖_nuc)/dW = −U @ Vᵀ   (where W = U Σ Vᵀ)
-        Adding rank_lambda × (−U@Vᵀ) to dW/phi pushes W toward higher nuclear norm,
+        d(-||W||_nuc)/dW = -U @ Vt   (where W = U S Vt)
+        Adding rank_lambda * (-U@Vt) to dW/phi pushes W toward higher nuclear norm,
         which prevents singular values from collapsing to zero (rank preservation).
     """
     rank = np.linalg.matrix_rank(W, tol=1e-6)
@@ -183,7 +186,7 @@ def _rank_penalty_and_grad(W: np.ndarray, d_latent: int) -> Tuple[float, np.ndar
     penalty = 1.0 / (1.0 + float(rank_gap))
 
     U, _, Vt = np.linalg.svd(W, full_matrices=False)
-    grad = -(U @ Vt)  # gradient of −‖W‖_nuc w.r.t. W
+    grad = -(U @ Vt)  # gradient of -||W||_nuc w.r.t. W
 
     return penalty, grad
 
@@ -192,11 +195,12 @@ def _rank_penalty_and_grad(W: np.ndarray, d_latent: int) -> Tuple[float, np.ndar
 # Gradient application
 # ---------------------------------------------------------------------------
 
+
 def _apply_sgd(phi: PhiMap, grads: dict, lr: float, grad_clip: float) -> None:
     phi.W_phi -= lr * np.clip(grads["W_phi"], -grad_clip, grad_clip)
     phi.b_phi -= lr * np.clip(grads["b_phi"], -grad_clip, grad_clip)
-    phi.W_F   -= lr * np.clip(grads["W_F"],   -grad_clip, grad_clip)
-    phi.b_F   -= lr * np.clip(grads["b_F"],   -grad_clip, grad_clip)
+    phi.W_F -= lr * np.clip(grads["W_F"], -grad_clip, grad_clip)
+    phi.b_F -= lr * np.clip(grads["b_F"], -grad_clip, grad_clip)
 
 
 def _make_adam_state(phi: PhiMap) -> dict:
@@ -221,22 +225,23 @@ def _apply_adam(
     for key in ("W_phi", "b_phi", "W_F", "b_F"):
         g = np.clip(grads[key], -grad_clip, grad_clip)
         m[key] = beta1 * m[key] + (1 - beta1) * g
-        v[key] = beta2 * v[key] + (1 - beta2) * g ** 2
-        m_hat = m[key] / (1 - beta1 ** step)
-        v_hat = v[key] / (1 - beta2 ** step)
+        v[key] = beta2 * v[key] + (1 - beta2) * g**2
+        m_hat = m[key] / (1 - beta1**step)
+        v_hat = v[key] / (1 - beta2**step)
         getattr(phi, key)[...] -= lr * m_hat / (np.sqrt(v_hat) + eps)
 
 
-def _phi_params(phi: PhiMap):
+def _phi_params(phi: PhiMap) -> Iterator[tuple[str, np.ndarray]]:
     yield "W_phi", phi.W_phi
     yield "b_phi", phi.b_phi
-    yield "W_F",   phi.W_F
-    yield "b_F",   phi.b_F
+    yield "W_F", phi.W_F
+    yield "b_F", phi.b_F
 
 
 # ---------------------------------------------------------------------------
 # Gradient monitoring
 # ---------------------------------------------------------------------------
+
 
 def _check_grad_norms(grads: dict, grad_clip: float, step: int) -> None:
     threshold = _GRAD_EXPLODE_WARN_FACTOR * grad_clip
@@ -244,8 +249,11 @@ def _check_grad_norms(grads: dict, grad_clip: float, step: int) -> None:
         norm = float(np.linalg.norm(g))
         if norm > threshold:
             logger.warning(
-                "phi_update: large gradient at step %d — %s norm=%.3f > %.1f×clip",
-                step, key, norm, _GRAD_EXPLODE_WARN_FACTOR,
+                "phi_update: large gradient at step %d -- %s norm=%.3f > %.1fx clip",
+                step,
+                key,
+                norm,
+                _GRAD_EXPLODE_WARN_FACTOR,
             )
 
 
@@ -253,29 +261,30 @@ def _check_grad_norms(grads: dict, grad_clip: float, step: int) -> None:
 # Loss & exact gradients
 # ---------------------------------------------------------------------------
 
+
 def _loss_and_grads(
     phi: PhiMap,
     features: np.ndarray,
     ce_encs: np.ndarray,
     T: int,
-) -> Tuple[float, dict]:
+) -> tuple[float, dict]:
     """Compute mean prediction loss and exact gradients over T transitions."""
     d = phi.d_latent
 
     total_loss = 0.0
     dW_phi = np.zeros_like(phi.W_phi)
     db_phi = np.zeros_like(phi.b_phi)
-    dW_F   = np.zeros_like(phi.W_F)
-    db_F   = np.zeros_like(phi.b_F)
+    dW_F = np.zeros_like(phi.W_F)
+    db_F = np.zeros_like(phi.b_F)
 
     for t in range(T):
-        f_t    = features[t]
+        f_t = features[t]
         f_next = features[t + 1]
-        c_t    = ce_encs[t]
+        c_t = ce_encs[t]
 
-        z_t    = phi.W_phi @ f_t    + phi.b_phi
+        z_t = phi.W_phi @ f_t + phi.b_phi
         z_next = phi.W_phi @ f_next + phi.b_phi
-        zc_t   = np.concatenate([z_t, c_t])
+        zc_t = np.concatenate([z_t, c_t])
         z_pred = phi.W_F @ zc_t + phi.b_F
 
         res = z_pred - z_next
@@ -295,6 +304,6 @@ def _loss_and_grads(
     return total_loss * inv_T, {
         "W_phi": dW_phi * inv_T,
         "b_phi": db_phi * inv_T,
-        "W_F":   dW_F   * inv_T,
-        "b_F":   db_F   * inv_T,
+        "W_F": dW_F * inv_T,
+        "b_F": db_F * inv_T,
     }

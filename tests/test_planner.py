@@ -8,6 +8,7 @@ Verifies:
   - All planners emit tasks with depth=0 (INV-8 invariant)
   - Resource budget is correctly divided across tasks
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -22,10 +23,10 @@ from emergo import (
 )
 from emergo.types import Goal
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _graph() -> Graph:
     adj = np.zeros((2, 2), dtype=float)
@@ -50,6 +51,7 @@ def _auth():
 # ---------------------------------------------------------------------------
 # Base Planner
 # ---------------------------------------------------------------------------
+
 
 class TestBasePlanner:
     def test_single_task_emitted(self):
@@ -80,6 +82,7 @@ class TestBasePlanner:
 # SequentialPlanner
 # ---------------------------------------------------------------------------
 
+
 class TestSequentialPlanner:
     def test_emits_one_task_per_step(self):
         steps = ["Fetch", "Extract", "Summarize"]
@@ -97,11 +100,10 @@ class TestSequentialPlanner:
 
     def test_per_step_cost_respects_default_task_cost_cap(self):
         from emergo.config import DEFAULT_TASK_COST
+
         budget = 9.0
         steps = ["A", "B", "C"]
-        tasks = SequentialPlanner(steps).decompose(
-            _goal(budget=budget), _graph(), _auth()
-        )
+        tasks = SequentialPlanner(steps).decompose(_goal(budget=budget), _graph(), _auth())
         per_step = budget / len(steps)
         expected_per = min(per_step, DEFAULT_TASK_COST)
         for t in tasks:
@@ -116,12 +118,13 @@ class TestSequentialPlanner:
 # DependencyPlanner
 # ---------------------------------------------------------------------------
 
+
 class TestDependencyPlanner:
     def _chain_steps(self):
         return [
-            ("fetch",     "Retrieve source",  []),
-            ("extract",   "Extract facts",    ["fetch"]),
-            ("summarize", "Write summary",    ["extract"]),
+            ("fetch", "Retrieve source", []),
+            ("extract", "Extract facts", ["fetch"]),
+            ("summarize", "Write summary", ["extract"]),
         ]
 
     def test_emits_tasks_in_topological_order_chain(self):
@@ -183,11 +186,10 @@ class TestDependencyPlanner:
 
     def test_per_step_cost_respects_default_task_cost_cap(self):
         from emergo.config import DEFAULT_TASK_COST
+
         steps = self._chain_steps()
         budget = 6.0
-        tasks = DependencyPlanner(steps).decompose(
-            _goal(budget=budget), _graph(), _auth()
-        )
+        tasks = DependencyPlanner(steps).decompose(_goal(budget=budget), _graph(), _auth())
         per_step = budget / len(steps)
         expected_per = min(per_step, DEFAULT_TASK_COST)
         for t in tasks:

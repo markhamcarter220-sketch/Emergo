@@ -7,9 +7,10 @@ State = (G_t, φ_t, A_t, E_t) is the only mutable state; each iteration produces
 a new immutable tuple.  The loop is strictly sequential — no parallelism, no
 shared mutable state, no race conditions.
 """
+
 from __future__ import annotations
 
-from typing import List, Optional, Tuple, Union
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -22,10 +23,13 @@ from emergo.phi_update import phi_update
 from emergo.proposal import DefaultProposalGenerator, ProposalGenerator
 from emergo.types import Authority, CoordinationEvent, Errors, Graph, PhiMap, State
 
+if TYPE_CHECKING:
+    from emergo.diagnostics import KernelDiagnostics
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def make_initial_phi(
     d_latent: int = 8,
@@ -52,9 +56,10 @@ def make_initial_authority(agent_ids: tuple, baseline: float = 0.5) -> Authority
     return Authority(scores={a: baseline for a in agent_ids}, baseline=baseline)
 
 
-def _topology_entropy_from_G(G: Graph) -> float:
+def _topology_entropy_from_graph(G: Graph) -> float:
     """Compute topology entropy for a given graph."""
     from emergo.diagnostics import topology_entropy
+
     return topology_entropy(G.adjacency)
 
 
@@ -62,17 +67,17 @@ def emergo_kernel(
     initial_state: State,
     max_iterations: int = 1000,
     convergence_threshold: float = 1e-4,
-    lux: Optional[Lux] = None,
-    rng: Optional[np.random.Generator] = None,
+    lux: Lux | None = None,
+    rng: np.random.Generator | None = None,
     phi_update_interval: int = 10,
     collect_diagnostics: bool = False,
-    observers: Optional[List] = None,
-    proposal_generator: Optional[ProposalGenerator] = None,
+    observers: list | None = None,
+    proposal_generator: ProposalGenerator | None = None,
     phi_optimizer: str = "sgd",
-    phi_lr: Optional[float] = None,
+    phi_lr: float | None = None,
     phi_grad_clip: float = 1.0,
     phi_early_stop_patience: int = 5,
-) -> Union[Tuple[State, str], Tuple[State, str, "KernelDiagnostics"]]:
+) -> tuple[State, str] | tuple[State, str, KernelDiagnostics]:
     """Run the fixed-point loop until convergence or max_iterations.
 
     Each iteration (Axiom — sequential, atomic):
@@ -106,22 +111,24 @@ def emergo_kernel(
         rng = np.random.default_rng(seed=0)
     if proposal_generator is None:
         proposal_generator = DefaultProposalGenerator()
-    _observers: List = list(observers) if observers else []
+    _observers: list = list(observers) if observers else []
 
     from emergo.phi_update import _LEARNING_RATE
+
     _phi_lr = phi_lr if phi_lr is not None else _LEARNING_RATE
 
     G_t, phi_t, A_t, E_history = initial_state
 
-    g_history: List[Graph] = [G_t]
-    ce_history: List[CoordinationEvent] = []
+    g_history: list[Graph] = [G_t]
+    ce_history: list[CoordinationEvent] = []
 
     state = initial_state
 
     # Diagnostics setup
     if collect_diagnostics:
         from emergo.diagnostics import IterationRecord, KernelDiagnostics
-        diag_records: List[IterationRecord] = []
+
+        diag_records: list[IterationRecord] = []
 
     for t in range(max_iterations):
         # INV-10: fire observers before CE sampling (read-only snapshot)
@@ -138,20 +145,22 @@ def emergo_kernel(
             fire_observers(_observers, "on_ce_result", t, CE_t, False, None)
             if collect_diagnostics:
                 edge_count = int(np.sum(G_t.adjacency > 0))
-                diag_records.append(IterationRecord(
-                    iteration=t,
-                    ce_attempted=True,
-                    ce_accepted=False,
-                    ce_type=CE_t.event_type,
-                    ce_proposer=CE_t.participants[0] if CE_t.participants else None,
-                    ce_participants=tuple(CE_t.participants),
-                    authority_scores={aid: A_t.get(aid) for aid in G_t.agent_ids},
-                    authority_delta={},
-                    topology_entropy=_topology_entropy_from_G(G_t),
-                    edge_count=edge_count,
-                    error_mean=None,
-                    phi_loss=None,
-                ))
+                diag_records.append(
+                    IterationRecord(
+                        iteration=t,
+                        ce_attempted=True,
+                        ce_accepted=False,
+                        ce_type=CE_t.event_type,
+                        ce_proposer=CE_t.participants[0] if CE_t.participants else None,
+                        ce_participants=tuple(CE_t.participants),
+                        authority_scores={aid: A_t.get(aid) for aid in G_t.agent_ids},
+                        authority_delta={},
+                        topology_entropy=_topology_entropy_from_graph(G_t),
+                        edge_count=edge_count,
+                        error_mean=None,
+                        phi_loss=None,
+                    )
+                )
             continue
 
         # Step 2: ErrorComputation — pure function over current φ
@@ -163,13 +172,16 @@ def emergo_kernel(
         # Accumulate history for φ fitting
         g_history.append(G_next)
         ce_history.append(CE_t)
-        E_next = E_history + [errors]
+        E_next = [*E_history, errors]
 
         # Step 4: PhiUpdate — joint optimization of φ and F
-        phi_loss_value: Optional[float] = None
+        phi_loss_value: float | None = None
         if (t % phi_update_interval == 0) and len(g_history) >= 2:
             phi_next, phi_loss_value = phi_update(
-                phi_t, g_history, ce_history, E_next,
+                phi_t,
+                g_history,
+                ce_history,
+                E_next,
                 lr=_phi_lr,
                 grad_clip=phi_grad_clip,
                 optimizer=phi_optimizer,
@@ -188,20 +200,22 @@ def emergo_kernel(
                 for aid in CE_t.participants
                 if aid in G_t.agent_ids
             }
-            diag_records.append(IterationRecord(
-                iteration=t,
-                ce_attempted=True,
-                ce_accepted=True,
-                ce_type=CE_t.event_type,
-                ce_proposer=CE_t.participants[0] if CE_t.participants else None,
-                ce_participants=tuple(CE_t.participants),
-                authority_scores={aid: A_next.get(aid) for aid in G_next.agent_ids},
-                authority_delta=authority_delta,
-                topology_entropy=_topology_entropy_from_G(G_next),
-                edge_count=edge_count,
-                error_mean=errors.mean_error(),
-                phi_loss=phi_loss_value,
-            ))
+            diag_records.append(
+                IterationRecord(
+                    iteration=t,
+                    ce_attempted=True,
+                    ce_accepted=True,
+                    ce_type=CE_t.event_type,
+                    ce_proposer=CE_t.participants[0] if CE_t.participants else None,
+                    ce_participants=tuple(CE_t.participants),
+                    authority_scores={aid: A_next.get(aid) for aid in G_next.agent_ids},
+                    authority_delta=authority_delta,
+                    topology_entropy=_topology_entropy_from_graph(G_next),
+                    edge_count=edge_count,
+                    error_mean=errors.mean_error(),
+                    phi_loss=phi_loss_value,
+                )
+            )
 
         # Fire observer after CE accepted (INV-10: errors is a value object, not mutable)
         fire_observers(_observers, "on_ce_result", t, CE_t, True, errors)
@@ -212,17 +226,25 @@ def emergo_kernel(
         if _converged(E_history, threshold=convergence_threshold):
             fire_observers(_observers, "on_kernel_done", "Converged", state, t + 1)
             if collect_diagnostics:
-                return state, "Converged", KernelDiagnostics(
-                    records=diag_records,
-                    agent_ids=G_t.agent_ids,
+                return (
+                    state,
+                    "Converged",
+                    KernelDiagnostics(
+                        records=diag_records,
+                        agent_ids=G_t.agent_ids,
+                    ),
                 )
             return state, "Converged"
 
     fire_observers(_observers, "on_kernel_done", "Max iterations reached", state, max_iterations)
     if collect_diagnostics:
-        return state, "Max iterations reached", KernelDiagnostics(
-            records=diag_records,
-            agent_ids=G_t.agent_ids,
+        return (
+            state,
+            "Max iterations reached",
+            KernelDiagnostics(
+                records=diag_records,
+                agent_ids=G_t.agent_ids,
+            ),
         )
     return state, "Max iterations reached"
 
@@ -231,8 +253,9 @@ def emergo_kernel(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _converged(
-    error_history: List[Errors],
+    error_history: list[Errors],
     threshold: float,
     window: int = 5,
 ) -> bool:
@@ -240,5 +263,5 @@ def _converged(
     if len(error_history) < window * 2:
         return False
     recent = np.mean([e.mean_error() for e in error_history[-window:]])
-    prev = np.mean([e.mean_error() for e in error_history[-2 * window: -window]])
+    prev = np.mean([e.mean_error() for e in error_history[-2 * window : -window]])
     return float(abs(recent - prev)) < threshold

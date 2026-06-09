@@ -18,10 +18,11 @@ Concrete implementations:
                                testing / injecting LLM-generated CEs
   WeightedMixGenerator       — mixes N generators by sampling weight
 """
+
 from __future__ import annotations
 
 import logging
-from typing import List, Optional, Protocol, Tuple, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 import numpy as np
 
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Protocol
 # ---------------------------------------------------------------------------
+
 
 @runtime_checkable
 class ProposalGenerator(Protocol):
@@ -51,7 +53,7 @@ class ProposalGenerator(Protocol):
         A_t: Authority,
         G_t: Graph,
         rng: np.random.Generator,
-    ) -> Optional[CoordinationEvent]:
+    ) -> CoordinationEvent | None:
         """Sample a CE proposal.  May return None to skip this iteration."""
         ...
 
@@ -59,6 +61,7 @@ class ProposalGenerator(Protocol):
 # ---------------------------------------------------------------------------
 # Concrete implementations
 # ---------------------------------------------------------------------------
+
 
 class DefaultProposalGenerator:
     """Softmax authority-weighted edge-flip generator.
@@ -76,7 +79,7 @@ class DefaultProposalGenerator:
         A_t: Authority,
         G_t: Graph,
         rng: np.random.Generator,
-    ) -> Optional[CoordinationEvent]:
+    ) -> CoordinationEvent | None:
         if G_t.n_agents < 2:
             return None
 
@@ -125,7 +128,7 @@ class SequenceProposalGenerator:
                    skips degenerate iterations and keeps going).
     """
 
-    def __init__(self, ces: List[CoordinationEvent], *, loop: bool = False) -> None:
+    def __init__(self, ces: list[CoordinationEvent], *, loop: bool = False) -> None:
         self._ces = list(ces)
         self._loop = loop
         self._idx = 0
@@ -135,7 +138,7 @@ class SequenceProposalGenerator:
         A_t: Authority,
         G_t: Graph,
         rng: np.random.Generator,
-    ) -> Optional[CoordinationEvent]:
+    ) -> CoordinationEvent | None:
         if not self._ces:
             return None
         ce = self._ces[self._idx % len(self._ces)]
@@ -147,7 +150,8 @@ class SequenceProposalGenerator:
             if p not in G_t.agent_ids:
                 logger.debug(
                     "SequenceProposalGenerator: skipping CE %s — participant %r not in graph",
-                    ce.event_type, p,
+                    ce.event_type,
+                    p,
                 )
                 return None
         return ce
@@ -174,7 +178,7 @@ class WeightedMixGenerator:
                     sum to 1 — they are normalised internally.
     """
 
-    def __init__(self, generators: List[Tuple[ProposalGenerator, float]]) -> None:
+    def __init__(self, generators: list[tuple[ProposalGenerator, float]]) -> None:
         if not generators:
             raise ValueError("WeightedMixGenerator requires at least one generator")
         self._gens = [g for g, _ in generators]
@@ -188,11 +192,12 @@ class WeightedMixGenerator:
         A_t: Authority,
         G_t: Graph,
         rng: np.random.Generator,
-    ) -> Optional[CoordinationEvent]:
-        order = list(rng.choice(len(self._gens), size=len(self._gens),
-                                p=self._weights, replace=False))
+    ) -> CoordinationEvent | None:
+        order = list(
+            rng.choice(len(self._gens), size=len(self._gens), p=self._weights, replace=False)
+        )
         for idx in order:
-            ce = self._gens[idx].propose(A_t, G_t, rng)
+            ce: CoordinationEvent | None = self._gens[idx].propose(A_t, G_t, rng)
             if ce is not None:
                 return ce
         return None

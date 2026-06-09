@@ -1,5 +1,5 @@
 """Tests for AuthorityUpdate: clamping, calibration, continuous updates."""
-import numpy as np
+
 import pytest
 
 from emergo.authority_update import authority_update

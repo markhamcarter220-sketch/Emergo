@@ -1,8 +1,9 @@
 """Tests for emergo/features.py — fixed-dimensional feature extraction."""
+
 import numpy as np
 import pytest
 
-from emergo.features import extract_graph_features, encode_ce
+from emergo.features import encode_ce, extract_graph_features
 from emergo.types import CoordinationEvent, Graph
 
 
@@ -35,9 +36,9 @@ class TestDimensionalityInvariant:
     def test_output_shape_is_always_d_features(self, n_agents, d_features):
         G = _make_graph(n_agents)
         out = extract_graph_features(G, d_features)
-        assert out.shape == (d_features,), (
-            f"n_agents={n_agents} d_features={d_features}: got shape {out.shape}"
-        )
+        assert out.shape == (
+            d_features,
+        ), f"n_agents={n_agents} d_features={d_features}: got shape {out.shape}"
 
     def test_empty_graph_returns_d_features(self):
         G = _make_empty_graph()
@@ -102,9 +103,9 @@ class TestBoundedFeatures:
     def test_max_abs_feature_le_1(self, n_agents):
         G = _make_graph(n_agents)
         out = extract_graph_features(G, 16)
-        assert float(np.abs(out).max()) <= 1.0 + 1e-9, (
-            f"Feature exceeds ±1 for n_agents={n_agents}: max={np.abs(out).max()}"
-        )
+        assert (
+            float(np.abs(out).max()) <= 1.0 + 1e-9
+        ), f"Feature exceeds ±1 for n_agents={n_agents}: max={np.abs(out).max()}"
 
     def test_bounded_for_dense_graph(self):
         n = 10

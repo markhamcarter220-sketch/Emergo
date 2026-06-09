@@ -6,38 +6,42 @@ analyse those records to surface known failure modes.
 
 This module must NOT import from kernel.py (circular import).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING
 
 import numpy as np
 
+if TYPE_CHECKING:
+    from emergo.types import State
 
 # ---------------------------------------------------------------------------
 # Data types
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class IterationRecord:
     iteration: int
     ce_attempted: bool
     ce_accepted: bool
-    ce_type: Optional[str] = None
-    ce_proposer: Optional[str] = None          # initiating agent (first participant)
-    ce_participants: Optional[Tuple[str, ...]] = None
-    authority_scores: Dict[str, float] = field(default_factory=dict)
-    authority_delta: Dict[str, float] = field(default_factory=dict)  # A_next - A_t
+    ce_type: str | None = None
+    ce_proposer: str | None = None  # initiating agent (first participant)
+    ce_participants: tuple[str, ...] | None = None
+    authority_scores: dict[str, float] = field(default_factory=dict)
+    authority_delta: dict[str, float] = field(default_factory=dict)  # A_next - A_t
     topology_entropy: float = 0.0
     edge_count: int = 0
-    error_mean: Optional[float] = None
-    phi_loss: Optional[float] = None
+    error_mean: float | None = None
+    phi_loss: float | None = None
 
 
 @dataclass
 class KernelDiagnostics:
-    records: List[IterationRecord]
-    agent_ids: Tuple[str, ...]
+    records: list[IterationRecord]
+    agent_ids: tuple[str, ...]
 
     def authority_matrix(self) -> np.ndarray:
         """(n_records, n_agents) — authority score at each recorded iteration."""
@@ -59,14 +63,13 @@ class KernelDiagnostics:
         rates = []
         for i in range(n):
             start = max(0, i - window + 1)
-            rates.append(float(np.mean(accepted[start: i + 1])))
+            rates.append(float(np.mean(accepted[start : i + 1])))
         return np.array(rates)
 
     def phi_losses(self) -> np.ndarray:
         """Non-None, finite phi_loss values."""
         vals = [
-            r.phi_loss for r in self.records
-            if r.phi_loss is not None and np.isfinite(r.phi_loss)
+            r.phi_loss for r in self.records if r.phi_loss is not None and np.isfinite(r.phi_loss)
         ]
         return np.array(vals, dtype=float)
 
@@ -82,7 +85,7 @@ class KernelDiagnostics:
 class DetectorResult:
     name: str
     failure_detected: bool
-    severity: float       # 0.0 = healthy, 1.0 = critical
+    severity: float  # 0.0 = healthy, 1.0 = critical
     evidence: str
     recommendation: str = ""
 
@@ -90,6 +93,7 @@ class DetectorResult:
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
+
 
 def topology_entropy(adjacency: np.ndarray) -> float:
     """Entropy of the edge-weight distribution of an adjacency matrix."""
@@ -106,6 +110,7 @@ def topology_entropy(adjacency: np.ndarray) -> float:
 # ---------------------------------------------------------------------------
 # 8 failure detectors
 # ---------------------------------------------------------------------------
+
 
 def detect_authority_collapse(diag: KernelDiagnostics) -> DetectorResult:
     """Detects whether all agents' authority has collapsed toward zero."""
@@ -138,9 +143,13 @@ def detect_authority_collapse(diag: KernelDiagnostics) -> DetectorResult:
             f"(threshold: mean<0.1, std<0.05)"
         ),
         recommendation=(
-            "Introduce per-agent credit differentiation so authority does not "
-            "monotonically decrease for all participants."
-        ) if failure else "",
+            (
+                "Introduce per-agent credit differentiation so authority does not "
+                "monotonically decrease for all participants."
+            )
+            if failure
+            else ""
+        ),
     )
 
 
@@ -174,19 +183,22 @@ def detect_topology_lock_in(
         failure_detected=failure,
         severity=severity,
         evidence=(
-            f"Tail CE acceptance rate={tail_rate:.4f} "
-            f"(threshold={threshold}, window={window})"
+            f"Tail CE acceptance rate={tail_rate:.4f} " f"(threshold={threshold}, window={window})"
         ),
         recommendation=(
-            "Lower Lux min_authority or introduce authority injection to "
-            "unfreeze topology exploration."
-        ) if failure else "",
+            (
+                "Lower Lux min_authority or introduce authority injection to "
+                "unfreeze topology exploration."
+            )
+            if failure
+            else ""
+        ),
     )
 
 
 def detect_phi_gaming(
     diag: KernelDiagnostics,
-    final_state,
+    final_state: State,
     n_random: int = 50,
     ratio_threshold: float = 2.0,
 ) -> DetectorResult:
@@ -197,11 +209,12 @@ def detect_phi_gaming(
     from emergo.lux import Lux
     from emergo.types import CoordinationEvent
 
-    G_final, phi_final, A_final, _ = final_state
+    G_final, phi_final, _A_final, _ = final_state
 
     # Gather last 100 accepted-CE error_means
     accepted_errors = [
-        r.error_mean for r in diag.records
+        r.error_mean
+        for r in diag.records
         if r.ce_accepted and r.error_mean is not None and np.isfinite(r.error_mean)
     ][-100:]
 
@@ -220,7 +233,7 @@ def detect_phi_gaming(
     A_open = make_initial_authority(G_final.agent_ids, baseline=1.0)
     rng = np.random.default_rng(99)
     agents = list(G_final.agent_ids)
-    random_errors = []
+    random_errors: list[float] = []
 
     attempts = 0
     while len(random_errors) < n_random and attempts < n_random * 20:
@@ -265,7 +278,9 @@ def detect_phi_gaming(
     random_mean_error = float(np.mean(random_errors))
     ratio = random_mean_error / (proposed_mean_error + 1e-10)
     failure = ratio > ratio_threshold
-    severity = float(np.clip((ratio - ratio_threshold) / ratio_threshold, 0.0, 1.0)) if failure else 0.0
+    severity = (
+        float(np.clip((ratio - ratio_threshold) / ratio_threshold, 0.0, 1.0)) if failure else 0.0
+    )
 
     return DetectorResult(
         name="phi_gaming",
@@ -277,9 +292,13 @@ def detect_phi_gaming(
             f"ratio={ratio:.2f} (threshold={ratio_threshold})"
         ),
         recommendation=(
-            "Agents may be cherry-picking easy-to-predict CEs. "
-            "Introduce a diversity penalty or random CE injection."
-        ) if failure else "",
+            (
+                "Agents may be cherry-picking easy-to-predict CEs. "
+                "Introduce a diversity penalty or random CE injection."
+            )
+            if failure
+            else ""
+        ),
     )
 
 
@@ -301,16 +320,16 @@ def detect_speculative_cascades(
             evidence=f"Fewer than {2 * window} records; skipping.",
         )
 
-    signals = []
+    signals_list: list[float] = []
     for i in range(window, n):
-        auth_slice = mat[i - window: i]
+        auth_slice = mat[i - window : i]
         auth_slice = np.where(np.isnan(auth_slice), 0.0, auth_slice)
         auth_vol = float(np.std(auth_slice))
-        ec_slice = edge_counts[i - window: i]
+        ec_slice = edge_counts[i - window : i]
         edge_range = float(np.max(ec_slice) - np.min(ec_slice)) + 1e-8
-        signals.append(auth_vol / edge_range)
+        signals_list.append(auth_vol / edge_range)
 
-    signals = np.array(signals)
+    signals = np.array(signals_list)
     if len(signals) == 0:
         return DetectorResult(
             name="speculative_cascades",
@@ -333,7 +352,11 @@ def detect_speculative_cascades(
     max_signal = float(np.max(signals))
     threshold_val = sig_mean + sigma_threshold * sig_std
     failure = max_signal > threshold_val
-    severity = float(np.clip((max_signal - threshold_val) / (sig_std + 1e-10), 0.0, 1.0)) if failure else 0.0
+    severity = (
+        float(np.clip((max_signal - threshold_val) / (sig_std + 1e-10), 0.0, 1.0))
+        if failure
+        else 0.0
+    )
 
     return DetectorResult(
         name="speculative_cascades",
@@ -345,9 +368,13 @@ def detect_speculative_cascades(
             f"threshold={threshold_val:.4f}"
         ),
         recommendation=(
-            "An authority volatility spike was detected relative to topology change. "
-            "Check for runaway authority cascades in the CE sampling path."
-        ) if failure else "",
+            (
+                "An authority volatility spike was detected relative to topology change. "
+                "Check for runaway authority cascades in the CE sampling path."
+            )
+            if failure
+            else ""
+        ),
     )
 
 
@@ -381,11 +408,11 @@ def detect_lux_bottleneck(
 
     failure = rate_ratio < rate_ratio_threshold or loss_ratio > 2.0
     if failure:
-        severity = float(np.clip(
-            max(1.0 - rate_ratio / rate_ratio_threshold,
-                (loss_ratio - 2.0) / 2.0),
-            0.0, 1.0
-        ))
+        severity = float(
+            np.clip(
+                max(1.0 - rate_ratio / rate_ratio_threshold, (loss_ratio - 2.0) / 2.0), 0.0, 1.0
+            )
+        )
     else:
         severity = 0.0
 
@@ -400,15 +427,19 @@ def detect_lux_bottleneck(
             f"loss_ratio={loss_ratio:.4f}"
         ),
         recommendation=(
-            "Lux min_authority is suppressing topology exploration. "
-            "Lower min_authority or use authority normalization to unblock CEs."
-        ) if failure else "",
+            (
+                "Lux min_authority is suppressing topology exploration. "
+                "Lower min_authority or use authority normalization to unblock CEs."
+            )
+            if failure
+            else ""
+        ),
     )
 
 
 def detect_clique_formation(
     diag: KernelDiagnostics,
-    final_state,
+    final_state: State,
     threshold: float = 2.0,
 ) -> DetectorResult:
     """Detects whether a clique of high-authority agents dominates."""
@@ -455,9 +486,13 @@ def detect_clique_formation(
             f"clique_index={clique_index:.4f} (threshold={threshold})"
         ),
         recommendation=(
-            "A small clique of agents has disproportionate authority. "
-            "Introduce authority decay or anti-monopoly constraints."
-        ) if failure else "",
+            (
+                "A small clique of agents has disproportionate authority. "
+                "Introduce authority decay or anti-monopoly constraints."
+            )
+            if failure
+            else ""
+        ),
     )
 
 
@@ -480,7 +515,8 @@ def detect_credit_assignment_ambiguity(diag: KernelDiagnostics) -> DetectorResul
             continue
 
         non_prop_deltas = [
-            v for k, v in rec.authority_delta.items()
+            v
+            for k, v in rec.authority_delta.items()
             if k != prop and k in (rec.ce_participants or ())
         ]
         if not non_prop_deltas:
@@ -498,8 +534,9 @@ def detect_credit_assignment_ambiguity(diag: KernelDiagnostics) -> DetectorResul
                 continue
             if rec.ce_participants is None or len(rec.ce_participants) < 2:
                 continue
-            deltas = [rec.authority_delta.get(p) for p in rec.ce_participants
-                      if p in rec.authority_delta]
+            deltas = [
+                rec.authority_delta[p] for p in rec.ce_participants if p in rec.authority_delta
+            ]
             if len(deltas) >= 2:
                 all_deltas_for_check.append(deltas)
 
@@ -512,15 +549,13 @@ def detect_credit_assignment_ambiguity(diag: KernelDiagnostics) -> DetectorResul
             )
 
         # Check if all participants in each CE get same delta
-        all_same = all(
-            len(set(round(d, 10) for d in deltas)) == 1
-            for deltas in all_deltas_for_check
-        )
+        all_same = all(len({round(d, 10) for d in deltas}) == 1 for deltas in all_deltas_for_check)
         diff = 0.0
         failure = all_same
         evidence = (
             "All multi-participant CEs have identical authority deltas across participants."
-            if failure else "No ambiguity detected."
+            if failure
+            else "No ambiguity detected."
         )
     else:
         mean_prop = float(np.mean(proposer_deltas))
@@ -541,10 +576,14 @@ def detect_credit_assignment_ambiguity(diag: KernelDiagnostics) -> DetectorResul
         severity=severity,
         evidence=evidence,
         recommendation=(
-            "All CE participants receive identical authority changes. "
-            "Implement per-agent error differentiation in error_computation "
-            "so initiating agents receive differentiated credit."
-        ) if failure else "",
+            (
+                "All CE participants receive identical authority changes. "
+                "Implement per-agent error differentiation in error_computation "
+                "so initiating agents receive differentiated credit."
+            )
+            if failure
+            else ""
+        ),
     )
 
 
@@ -581,9 +620,13 @@ def detect_emergent_conservatism(
             f"(window={window}, threshold={threshold})"
         ),
         recommendation=(
-            "Agents have become systematically conservative. "
-            "Introduce authority injection, forced exploration, or reduce min_authority."
-        ) if failure else "",
+            (
+                "Agents have become systematically conservative. "
+                "Introduce authority injection, forced exploration, or reduce min_authority."
+            )
+            if failure
+            else ""
+        ),
     )
 
 
@@ -591,13 +634,14 @@ def detect_emergent_conservatism(
 # Health check runner
 # ---------------------------------------------------------------------------
 
+
 def run_health_check(
     diag: KernelDiagnostics,
-    final_state,
-    diag_strict: Optional[KernelDiagnostics] = None,
-) -> List[DetectorResult]:
+    final_state: State,
+    diag_strict: KernelDiagnostics | None = None,
+) -> list[DetectorResult]:
     """Apply all detectors. Returns results sorted by severity descending."""
-    results: List[DetectorResult] = [
+    results: list[DetectorResult] = [
         detect_authority_collapse(diag),
         detect_topology_lock_in(diag),
         detect_phi_gaming(diag, final_state),
@@ -611,12 +655,14 @@ def run_health_check(
         results.append(detect_lux_bottleneck(diag, diag_strict))
     else:
         # Placeholder result when strict diag not provided
-        results.append(DetectorResult(
-            name="lux_bottleneck",
-            failure_detected=False,
-            severity=0.0,
-            evidence="No strict-Lux diagnostic provided for comparison.",
-        ))
+        results.append(
+            DetectorResult(
+                name="lux_bottleneck",
+                failure_detected=False,
+                severity=0.0,
+                evidence="No strict-Lux diagnostic provided for comparison.",
+            )
+        )
 
     results.sort(key=lambda r: r.severity, reverse=True)
     return results

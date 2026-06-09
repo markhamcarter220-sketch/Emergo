@@ -3,10 +3,10 @@
 Tests the full pipeline: kernel + coordinator + executor + observer + planner.
 These are longer-running tests that exercise multiple components together.
 """
+
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from emergo import (
     CoordinationRound,
@@ -26,13 +26,12 @@ from emergo import (
     run_health_check,
 )
 from emergo.lux_bridge import SimulatedLuxBridge, validate_bridge
-from emergo.types import Authority, CoordinationEvent
 from tests.conftest import make_ce
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _triangle() -> Graph:
     adj = np.array([[0, 1, 0], [0, 0, 1], [1, 0, 0]], dtype=float)
@@ -59,11 +58,12 @@ def _initial_state(G=None):
 # Kernel + Observer end-to-end
 # ---------------------------------------------------------------------------
 
+
 class TestKernelWithObservers:
     def test_kernel_runs_with_history_observer(self):
         obs = HistoryObserver()
         state = _initial_state()
-        final, reason = emergo_kernel(
+        _final, reason = emergo_kernel(
             state,
             max_iterations=30,
             observers=[obs],
@@ -95,7 +95,7 @@ class TestKernelWithObservers:
             rng=np.random.default_rng(12),
         )
         assert len(result) == 3
-        final_state, reason, diag = result
+        _final_state, _reason, diag = result
         assert diag is not None
 
     def test_logging_observer_does_not_raise(self):
@@ -113,10 +113,11 @@ class TestKernelWithObservers:
 # Kernel + Diagnostics health check
 # ---------------------------------------------------------------------------
 
+
 class TestKernelDiagnosticsIntegration:
     def test_health_check_runs_after_kernel(self):
         state = _initial_state()
-        final_state, reason, diag = emergo_kernel(
+        final_state, _reason, diag = emergo_kernel(
             state,
             max_iterations=50,
             collect_diagnostics=True,
@@ -143,6 +144,7 @@ class TestKernelDiagnosticsIntegration:
 # Executor + DependencyPlanner end-to-end
 # ---------------------------------------------------------------------------
 
+
 class TestExecutorWithDependencyPlanner:
     def test_three_step_dependency_plan_executes(self):
         bridge = SimulatedLuxBridge(initial_budget=200.0)
@@ -152,11 +154,13 @@ class TestExecutorWithDependencyPlanner:
         G = _triangle()
         state = _initial_state(G)
 
-        planner = DependencyPlanner([
-            ("fetch",   "Retrieve docs", []),
-            ("extract", "Extract facts", ["fetch"]),
-            ("write",   "Write summary", ["extract"]),
-        ])
+        planner = DependencyPlanner(
+            [
+                ("fetch", "Retrieve docs", []),
+                ("extract", "Extract facts", ["fetch"]),
+                ("write", "Write summary", ["extract"]),
+            ]
+        )
         executor = Executor(lux=lux, planner=planner)
 
         goal = Goal(
@@ -196,6 +200,7 @@ class TestExecutorWithDependencyPlanner:
 # Coordinator + Kernel state continuity
 # ---------------------------------------------------------------------------
 
+
 class TestCoordinatorIntegration:
     def test_coordinator_round_then_kernel_continues(self):
         bridge = SimulatedLuxBridge(initial_budget=100.0)
@@ -207,14 +212,17 @@ class TestCoordinatorIntegration:
         state = (G, phi, A, [])
 
         coord = MultiAgentCoordinator(lux=lux)
-        round_ = coord.coordinate([
-            ProposedCE("agent0", make_ce("add_edge", ("agent0", "agent1"), weight=0.5)),
-            ProposedCE("agent1", make_ce("add_edge", ("agent1", "agent2"), weight=0.5)),
-        ], state)
+        round_ = coord.coordinate(
+            [
+                ProposedCE("agent0", make_ce("add_edge", ("agent0", "agent1"), weight=0.5)),
+                ProposedCE("agent1", make_ce("add_edge", ("agent1", "agent2"), weight=0.5)),
+            ],
+            state,
+        )
 
         assert isinstance(round_, CoordinationRound)
         # Continue kernel from the coordinator's final state
-        final_state, reason = emergo_kernel(
+        _final_state, reason = emergo_kernel(
             round_.final_state,
             max_iterations=10,
             rng=np.random.default_rng(31),
@@ -231,12 +239,17 @@ class TestCoordinatorIntegration:
         state = (G, phi, A, [])
 
         coord = MultiAgentCoordinator(lux=lux)
-        round_ = coord.coordinate([
-            ProposedCE("agent0", make_ce("add_edge", ("agent0", "agent1"), weight=0.6),
-                       priority=0.9),
-            ProposedCE("agent1", make_ce("add_edge", ("agent0", "agent1"), weight=0.4),
-                       priority=0.3),
-        ], state)
+        round_ = coord.coordinate(
+            [
+                ProposedCE(
+                    "agent0", make_ce("add_edge", ("agent0", "agent1"), weight=0.6), priority=0.9
+                ),
+                ProposedCE(
+                    "agent1", make_ce("add_edge", ("agent0", "agent1"), weight=0.4), priority=0.3
+                ),
+            ],
+            state,
+        )
 
         # Only one can win (same edge conflict)
         assert len(round_.accepted) == 1
@@ -246,6 +259,7 @@ class TestCoordinatorIntegration:
 # ---------------------------------------------------------------------------
 # validate_bridge smoke test
 # ---------------------------------------------------------------------------
+
 
 class TestValidateBridge:
     def test_simulated_bridge_passes_validation(self):

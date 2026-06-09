@@ -18,13 +18,15 @@ Usage::
         fig.savefig("authority.png")
     render_health_dashboard(diag, final_state, output_dir="./plots")
 """
+
 from __future__ import annotations
 
+from collections.abc import Sequence
 import json
 import logging
-import sys
 from pathlib import Path
-from typing import IO, Any, Dict, List, Optional, Sequence, TYPE_CHECKING
+import sys
+from typing import IO, TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from emergo.diagnostics import DetectorResult, KernelDiagnostics
@@ -36,12 +38,14 @@ _MATPLOTLIB_WARNING_SENT = False
 _NETWORKX_WARNING_SENT = False
 
 
-def _try_matplotlib():
+def _try_matplotlib() -> Any:
     global _MATPLOTLIB_WARNING_SENT
     try:
         import matplotlib
+
         matplotlib.use("Agg")  # non-interactive backend; safe in headless environments
         import matplotlib.pyplot as plt
+
         return plt
     except ImportError:
         if not _MATPLOTLIB_WARNING_SENT:
@@ -53,10 +57,11 @@ def _try_matplotlib():
         return None
 
 
-def _try_networkx():
+def _try_networkx() -> Any:
     global _NETWORKX_WARNING_SENT
     try:
         import networkx as nx
+
         return nx
     except ImportError:
         if not _NETWORKX_WARNING_SENT:
@@ -72,13 +77,14 @@ def _try_networkx():
 # Plot functions
 # ---------------------------------------------------------------------------
 
+
 def plot_authority_history(
-    diag: "KernelDiagnostics",
+    diag: KernelDiagnostics,
     *,
     title: str = "Authority Score History",
-    figsize=(10, 5),
+    figsize: tuple = (10, 5),
     alpha: float = 0.85,
-) -> Optional[object]:
+) -> Any | None:
     """Per-agent authority scores over accepted iterations.
 
     Returns a matplotlib Figure, or None if matplotlib is not installed or
@@ -100,8 +106,7 @@ def plot_authority_history(
         scores = [r.authority_scores.get(agent_id, float("nan")) for r in accepted]
         ax.plot(iterations, scores, label=agent_id, alpha=alpha)
 
-    ax.axhline(0.1, color="crimson", linestyle="--", linewidth=0.9,
-               label="min_authority=0.1")
+    ax.axhline(0.1, color="crimson", linestyle="--", linewidth=0.9, label="min_authority=0.1")
     ax.set_xlabel("Iteration")
     ax.set_ylabel("Authority Score")
     ax.set_title(title)
@@ -113,11 +118,11 @@ def plot_authority_history(
 
 
 def plot_phi_loss(
-    diag: "KernelDiagnostics",
+    diag: KernelDiagnostics,
     *,
     title: str = "φ Optimization Loss",
-    figsize=(10, 4),
-) -> Optional[object]:
+    figsize: tuple = (10, 4),
+) -> Any | None:
     """φ training loss over iterations where phi_update ran.
 
     Uses log scale on the y-axis.  Returns None when matplotlib is absent
@@ -127,11 +132,7 @@ def plot_phi_loss(
     if plt is None:
         return None
 
-    loss_records = [
-        (r.iteration, r.phi_loss)
-        for r in diag.records
-        if r.phi_loss is not None
-    ]
+    loss_records = [(r.iteration, r.phi_loss) for r in diag.records if r.phi_loss is not None]
     if not loss_records:
         logger.warning("plot_phi_loss: no phi_loss data in diagnostics.")
         return None
@@ -148,11 +149,11 @@ def plot_phi_loss(
 
 
 def plot_edge_count(
-    diag: "KernelDiagnostics",
+    diag: KernelDiagnostics,
     *,
     title: str = "Active Edge Count",
-    figsize=(10, 4),
-) -> Optional[object]:
+    figsize: tuple = (10, 4),
+) -> Any | None:
     """Active edge count over accepted iterations (step plot).
 
     Returns a matplotlib Figure, or None when matplotlib is absent.
@@ -179,12 +180,12 @@ def plot_edge_count(
 
 
 def plot_graph_evolution(
-    graphs: Sequence["Graph"],
+    graphs: Sequence[Graph],
     *,
     title: str = "Graph Evolution",
     max_snapshots: int = 6,
-    figsize_per_panel=(3.5, 3.5),
-) -> Optional[object]:
+    figsize_per_panel: tuple = (3.5, 3.5),
+) -> Any | None:
     """Grid of networkx snapshots showing how the topology changes over time.
 
     Samples up to max_snapshots evenly from the provided sequence.
@@ -202,10 +203,7 @@ def plot_graph_evolution(
 
     n = len(graphs)
     k = min(max_snapshots, n)
-    indices = sorted(set(
-        int(round(i * (n - 1) / max(k - 1, 1)))
-        for i in range(k)
-    ))
+    indices = sorted(set(round(i * (n - 1) / max(k - 1, 1)) for i in range(k)))
     selected = [graphs[i] for i in indices]
 
     ncols = min(3, len(selected))
@@ -235,10 +233,16 @@ def plot_graph_evolution(
         pos = nx.spring_layout(DG, seed=42)
         edge_widths = [DG[u][v]["weight"] * 2 for u, v in DG.edges()] or [1.0]
         nx.draw_networkx(
-            DG, pos=pos, ax=ax,
-            node_size=400, font_size=8, arrows=True,
-            node_color="skyblue", edge_color="steelblue",
-            width=edge_widths, with_labels=True,
+            DG,
+            pos=pos,
+            ax=ax,
+            node_size=400,
+            font_size=8,
+            arrows=True,
+            node_color="skyblue",
+            edge_color="steelblue",
+            width=edge_widths,
+            with_labels=True,
         )
         ax.set_title(f"t={snap_idx}", fontsize=9)
         ax.axis("off")
@@ -252,15 +256,16 @@ def plot_graph_evolution(
 # Dashboard
 # ---------------------------------------------------------------------------
 
+
 def render_health_dashboard(
-    diag: "KernelDiagnostics",
-    final_state: "State",
+    diag: KernelDiagnostics,
+    final_state: State,
     output_dir: str = ".",
     *,
-    diag_strict: Optional["KernelDiagnostics"] = None,
-    graphs: Optional[Sequence["Graph"]] = None,
+    diag_strict: KernelDiagnostics | None = None,
+    graphs: Sequence[Graph] | None = None,
     prefix: str = "emergo",
-) -> List[str]:
+) -> list[str]:
     """Run all visualizations and save PNGs to output_dir.
 
     Returns the list of file paths successfully saved.
@@ -268,9 +273,9 @@ def render_health_dashboard(
     """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    saved: List[str] = []
+    saved: list[str] = []
 
-    def _save(fig, name: str) -> None:
+    def _save(fig: Any, name: str) -> None:
         if fig is None:
             return
         path = out / f"{prefix}_{name}.png"
@@ -283,6 +288,7 @@ def render_health_dashboard(
         finally:
             try:
                 import matplotlib.pyplot as plt
+
                 plt.close(fig)
             except Exception:
                 pass
@@ -301,9 +307,10 @@ def render_health_dashboard(
 # ASCII / plain-text utilities (no optional deps)
 # ---------------------------------------------------------------------------
 
+
 def print_health_report(
-    results: "List[DetectorResult]",
-    out: "IO[str]" = None,
+    results: list[DetectorResult],
+    out: IO[str] | None = None,
 ) -> None:
     """Print a formatted health-check table to a file-like object (default: stdout).
 
@@ -340,7 +347,7 @@ def print_health_report(
 
 
 def export_diagnostics_json(
-    diag: "KernelDiagnostics",
+    diag: KernelDiagnostics,
     path: str,
     *,
     indent: int = 2,
@@ -356,7 +363,7 @@ def export_diagnostics_json(
         topology_entropy, edge_count, error_mean, phi_loss.
     """
 
-    def _record_to_dict(r: Any) -> Dict[str, Any]:
+    def _record_to_dict(r: Any) -> dict[str, Any]:
         return {
             "iteration": r.iteration,
             "ce_attempted": r.ce_attempted,
@@ -372,7 +379,7 @@ def export_diagnostics_json(
             "phi_loss": r.phi_loss,
         }
 
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "agent_ids": list(diag.agent_ids),
         "n_records": len(diag.records),
         "records": [_record_to_dict(r) for r in diag.records],

@@ -3,36 +3,34 @@
 Tests cover 8 failure modes plus an integration health-report test.
 All tests use fixed seeds for determinism.
 """
+
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from emergo import (
-    Graph,
-    Authority,
-    Lux,
-    emergo_kernel,
-    make_initial_phi,
-    make_initial_authority,
-    KernelDiagnostics,
-    IterationRecord,
     DetectorResult,
-    run_health_check,
+    Graph,
+    KernelDiagnostics,
+    Lux,
     detect_authority_collapse,
-    detect_topology_lock_in,
-    detect_phi_gaming,
-    detect_speculative_cascades,
-    detect_lux_bottleneck,
     detect_clique_formation,
     detect_credit_assignment_ambiguity,
     detect_emergent_conservatism,
+    detect_lux_bottleneck,
+    detect_phi_gaming,
+    detect_speculative_cascades,
+    detect_topology_lock_in,
+    emergo_kernel,
+    make_initial_authority,
+    make_initial_phi,
+    run_health_check,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_graph(n_agents: int, edge_prob: float = 0.3, seed: int = 1) -> Graph:
     """Build a random directed graph with n_agents nodes."""
@@ -75,19 +73,22 @@ def _run(n_agents: int, n_iter: int, lux: Lux = None, seed: int = 0):
 # 1. Authority Collapse
 # ---------------------------------------------------------------------------
 
+
 class TestAuthorityCollapse:
     def test_detector_returns_result(self):
         """Detector runs on small kernel output and returns valid DetectorResult."""
-        final_state, reason, diag = _run(n_agents=3, n_iter=300)
+        _final_state, _reason, diag = _run(n_agents=3, n_iter=300)
         result = detect_authority_collapse(diag)
-        print(f"\n[authority_collapse] severity={result.severity:.2f} "
-              f"detected={result.failure_detected} | {result.evidence}")
+        print(
+            f"\n[authority_collapse] severity={result.severity:.2f} "
+            f"detected={result.failure_detected} | {result.evidence}"
+        )
         assert isinstance(result, DetectorResult)
         assert 0.0 <= result.severity <= 1.0
 
     def test_severity_in_range(self):
         """Severity is always clipped to [0, 1]."""
-        final_state, reason, diag = _run(n_agents=3, n_iter=300, seed=7)
+        _final_state, _reason, diag = _run(n_agents=3, n_iter=300, seed=7)
         result = detect_authority_collapse(diag)
         assert 0.0 <= result.severity <= 1.0
 
@@ -104,19 +105,22 @@ class TestAuthorityCollapse:
 # 2. Topology Lock-In
 # ---------------------------------------------------------------------------
 
+
 class TestTopologyLockIn:
     def test_detector_returns_result(self):
         """Detector runs on small kernel output and returns valid DetectorResult."""
-        final_state, reason, diag = _run(n_agents=3, n_iter=300)
+        _final_state, _reason, diag = _run(n_agents=3, n_iter=300)
         result = detect_topology_lock_in(diag)
-        print(f"\n[topology_lock_in] severity={result.severity:.2f} "
-              f"detected={result.failure_detected} | {result.evidence}")
+        print(
+            f"\n[topology_lock_in] severity={result.severity:.2f} "
+            f"detected={result.failure_detected} | {result.evidence}"
+        )
         assert isinstance(result, DetectorResult)
         assert 0.0 <= result.severity <= 1.0
 
     def test_threshold_sensitivity(self):
         """Changing threshold changes detection boundary."""
-        final_state, reason, diag = _run(n_agents=3, n_iter=300)
+        _final_state, _reason, diag = _run(n_agents=3, n_iter=300)
         result_loose = detect_topology_lock_in(diag, threshold=0.0001)
         result_tight = detect_topology_lock_in(diag, threshold=0.99)
         # Tight threshold is more likely to trigger failure
@@ -124,7 +128,7 @@ class TestTopologyLockIn:
 
     def test_format(self):
         """DetectorResult has all required fields."""
-        final_state, reason, diag = _run(n_agents=3, n_iter=300)
+        _final_state, _reason, diag = _run(n_agents=3, n_iter=300)
         result = detect_topology_lock_in(diag)
         assert hasattr(result, "name")
         assert hasattr(result, "failure_detected")
@@ -137,26 +141,29 @@ class TestTopologyLockIn:
 # 3. Phi Gaming
 # ---------------------------------------------------------------------------
 
+
 class TestPhiGaming:
     def test_detector_returns_result(self):
         """Detector runs and returns valid DetectorResult."""
-        final_state, reason, diag = _run(n_agents=3, n_iter=300)
+        final_state, _reason, diag = _run(n_agents=3, n_iter=300)
         result = detect_phi_gaming(diag, final_state)
-        print(f"\n[phi_gaming] severity={result.severity:.2f} "
-              f"detected={result.failure_detected} | {result.evidence}")
+        print(
+            f"\n[phi_gaming] severity={result.severity:.2f} "
+            f"detected={result.failure_detected} | {result.evidence}"
+        )
         assert isinstance(result, DetectorResult)
         assert 0.0 <= result.severity <= 1.0
 
     def test_medium_scale(self):
         """Runs on a medium-scale kernel and produces valid output."""
-        final_state, reason, diag = _run(n_agents=10, n_iter=500)
+        final_state, _reason, diag = _run(n_agents=10, n_iter=500)
         result = detect_phi_gaming(diag, final_state, n_random=20)
         assert isinstance(result, DetectorResult)
         assert 0.0 <= result.severity <= 1.0
 
     def test_format(self):
         """DetectorResult has all required fields."""
-        final_state, reason, diag = _run(n_agents=3, n_iter=300)
+        final_state, _reason, diag = _run(n_agents=3, n_iter=300)
         result = detect_phi_gaming(diag, final_state)
         assert result.name == "phi_gaming"
         assert isinstance(result.evidence, str)
@@ -166,13 +173,16 @@ class TestPhiGaming:
 # 4. Speculative Cascades
 # ---------------------------------------------------------------------------
 
+
 class TestSpeculativeCascades:
     def test_detector_returns_result(self):
         """Detector runs and returns valid DetectorResult."""
-        final_state, reason, diag = _run(n_agents=3, n_iter=300)
+        _final_state, _reason, diag = _run(n_agents=3, n_iter=300)
         result = detect_speculative_cascades(diag)
-        print(f"\n[speculative_cascades] severity={result.severity:.2f} "
-              f"detected={result.failure_detected} | {result.evidence}")
+        print(
+            f"\n[speculative_cascades] severity={result.severity:.2f} "
+            f"detected={result.failure_detected} | {result.evidence}"
+        )
         assert isinstance(result, DetectorResult)
         assert 0.0 <= result.severity <= 1.0
 
@@ -185,7 +195,7 @@ class TestSpeculativeCascades:
 
     def test_medium_scale(self):
         """Runs on a medium-scale kernel and produces valid output."""
-        final_state, reason, diag = _run(n_agents=10, n_iter=500)
+        _final_state, _reason, diag = _run(n_agents=10, n_iter=500)
         result = detect_speculative_cascades(diag, window=50)
         assert isinstance(result, DetectorResult)
         assert 0.0 <= result.severity <= 1.0
@@ -195,18 +205,21 @@ class TestSpeculativeCascades:
 # 5. Lux Bottleneck
 # ---------------------------------------------------------------------------
 
+
 class TestLuxBottleneck:
     def test_detector_compares_runs(self):
         """Permissive vs strict Lux runs are compared correctly."""
         lux_perm = Lux(min_authority=0.0)
         lux_strict = Lux(min_authority=0.5)
 
-        final_state_perm, _, diag_perm = _run(n_agents=3, n_iter=300, lux=lux_perm, seed=1)
-        final_state_strict, _, diag_strict = _run(n_agents=3, n_iter=300, lux=lux_strict, seed=1)
+        _final_state_perm, _, diag_perm = _run(n_agents=3, n_iter=300, lux=lux_perm, seed=1)
+        _final_state_strict, _, diag_strict = _run(n_agents=3, n_iter=300, lux=lux_strict, seed=1)
 
         result = detect_lux_bottleneck(diag_perm, diag_strict)
-        print(f"\n[lux_bottleneck] severity={result.severity:.2f} "
-              f"detected={result.failure_detected} | {result.evidence}")
+        print(
+            f"\n[lux_bottleneck] severity={result.severity:.2f} "
+            f"detected={result.failure_detected} | {result.evidence}"
+        )
         assert isinstance(result, DetectorResult)
         assert 0.0 <= result.severity <= 1.0
 
@@ -234,27 +247,32 @@ class TestLuxBottleneck:
 # 6. Clique Formation
 # ---------------------------------------------------------------------------
 
+
 class TestCliqueFormation:
     def test_small_graph_skips(self):
         """3-agent graph is skipped (need >= 4)."""
-        final_state, reason, diag = _run(n_agents=3, n_iter=300)
+        final_state, _reason, diag = _run(n_agents=3, n_iter=300)
         result = detect_clique_formation(diag, final_state)
-        print(f"\n[clique_formation] severity={result.severity:.2f} "
-              f"detected={result.failure_detected} | {result.evidence}")
+        print(
+            f"\n[clique_formation] severity={result.severity:.2f} "
+            f"detected={result.failure_detected} | {result.evidence}"
+        )
         assert result.failure_detected is False
 
     def test_medium_scale(self):
         """Returns valid DetectorResult on medium-scale run."""
-        final_state, reason, diag = _run(n_agents=10, n_iter=500)
+        final_state, _reason, diag = _run(n_agents=10, n_iter=500)
         result = detect_clique_formation(diag, final_state)
-        print(f"\n[clique_formation] severity={result.severity:.2f} "
-              f"detected={result.failure_detected} | {result.evidence}")
+        print(
+            f"\n[clique_formation] severity={result.severity:.2f} "
+            f"detected={result.failure_detected} | {result.evidence}"
+        )
         assert isinstance(result, DetectorResult)
         assert 0.0 <= result.severity <= 1.0
 
     def test_format(self):
         """DetectorResult has all required fields."""
-        final_state, reason, diag = _run(n_agents=10, n_iter=500)
+        final_state, _reason, diag = _run(n_agents=10, n_iter=500)
         result = detect_clique_formation(diag, final_state)
         assert result.name == "clique_formation"
         assert isinstance(result.evidence, str)
@@ -264,25 +282,28 @@ class TestCliqueFormation:
 # 7. Credit Assignment Ambiguity
 # ---------------------------------------------------------------------------
 
+
 class TestCreditAssignmentAmbiguity:
     def test_failure_resolved_by_differentiated_errors(self):
         """With differentiated per-agent errors, credit assignment ambiguity resolves."""
-        final_state, reason, diag = _run(n_agents=3, n_iter=300)
+        _final_state, _reason, diag = _run(n_agents=3, n_iter=300)
         result = detect_credit_assignment_ambiguity(diag)
-        print(f"\n[credit_assignment_ambiguity] severity={result.severity:.2f} "
-              f"detected={result.failure_detected} | {result.evidence}")
+        print(
+            f"\n[credit_assignment_ambiguity] severity={result.severity:.2f} "
+            f"detected={result.failure_detected} | {result.evidence}"
+        )
         # Proposer gets global error, participants get local error → differentiated
         assert result.failure_detected is False
 
     def test_medium_scale_failure_resolved(self):
         """Credit assignment ambiguity resolved at medium scale too."""
-        final_state, reason, diag = _run(n_agents=10, n_iter=500)
+        _final_state, _reason, diag = _run(n_agents=10, n_iter=500)
         result = detect_credit_assignment_ambiguity(diag)
         assert result.failure_detected is False
 
     def test_format(self):
         """DetectorResult has all required fields."""
-        final_state, reason, diag = _run(n_agents=3, n_iter=300)
+        _final_state, _reason, diag = _run(n_agents=3, n_iter=300)
         result = detect_credit_assignment_ambiguity(diag)
         assert result.name == "credit_assignment_ambiguity"
         assert isinstance(result.evidence, str)
@@ -294,19 +315,22 @@ class TestCreditAssignmentAmbiguity:
 # 8. Emergent Conservatism
 # ---------------------------------------------------------------------------
 
+
 class TestEmergentConservatism:
     def test_detector_returns_result(self):
         """Detector runs and returns valid DetectorResult."""
-        final_state, reason, diag = _run(n_agents=3, n_iter=300)
+        _final_state, _reason, diag = _run(n_agents=3, n_iter=300)
         result = detect_emergent_conservatism(diag)
-        print(f"\n[emergent_conservatism] severity={result.severity:.2f} "
-              f"detected={result.failure_detected} | {result.evidence}")
+        print(
+            f"\n[emergent_conservatism] severity={result.severity:.2f} "
+            f"detected={result.failure_detected} | {result.evidence}"
+        )
         assert isinstance(result, DetectorResult)
         assert 0.0 <= result.severity <= 1.0
 
     def test_medium_scale(self):
         """Runs on a medium-scale kernel and produces valid output."""
-        final_state, reason, diag = _run(n_agents=10, n_iter=500)
+        _final_state, _reason, diag = _run(n_agents=10, n_iter=500)
         result = detect_emergent_conservatism(diag)
         assert isinstance(result, DetectorResult)
         assert 0.0 <= result.severity <= 1.0
@@ -314,7 +338,7 @@ class TestEmergentConservatism:
     def test_insufficient_records(self):
         """Short run with fewer records than window returns non-failure."""
         # Use a very short run so we have fewer than 100 records
-        final_state, reason, diag = _run(n_agents=3, n_iter=50)
+        _final_state, _reason, diag = _run(n_agents=3, n_iter=50)
         result = detect_emergent_conservatism(diag, window=100)
         # Not enough records: should not erroneously fire
         assert result.severity >= 0.0
@@ -325,12 +349,14 @@ class TestEmergentConservatism:
 # Integration: Full health report
 # ---------------------------------------------------------------------------
 
+
 class TestHealthReport:
     def test_full_health_report(self):
         """Run all 8 detectors on medium-scale run and report findings."""
         G0, phi0, A0, E0 = _make_initial_state(n_agents=10)
-        final_state, reason, diag = emergo_kernel(
-            (G0, phi0, A0, E0), max_iterations=500,
+        final_state, _reason, diag = emergo_kernel(
+            (G0, phi0, A0, E0),
+            max_iterations=500,
             rng=np.random.default_rng(42),
             collect_diagnostics=True,
         )
@@ -339,7 +365,8 @@ class TestHealthReport:
         G0b, phi0b, A0b, E0b = _make_initial_state(n_agents=10)
         lux_strict = Lux(min_authority=0.5)
         _, _, diag_strict = emergo_kernel(
-            (G0b, phi0b, A0b, E0b), max_iterations=500,
+            (G0b, phi0b, A0b, E0b),
+            max_iterations=500,
             lux=lux_strict,
             rng=np.random.default_rng(42),
             collect_diagnostics=True,
@@ -371,9 +398,10 @@ class TestHealthReport:
         """When collect_diagnostics=False, return is 2-tuple (backward compat)."""
         G0, phi0, A0, E0 = _make_initial_state(n_agents=3)
         result = emergo_kernel(
-            (G0, phi0, A0, E0), max_iterations=30,
+            (G0, phi0, A0, E0),
+            max_iterations=30,
             rng=np.random.default_rng(0),
             collect_diagnostics=False,
         )
-        state, reason = result  # Must unpack as 2-tuple
+        _state, reason = result  # Must unpack as 2-tuple
         assert reason in {"Converged", "Max iterations reached"}

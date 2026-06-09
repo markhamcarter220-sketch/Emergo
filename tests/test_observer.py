@@ -8,18 +8,16 @@ Verifies:
   - Observers receive read-only snapshots; mutations do not affect kernel state
   - on_kernel_done is fired for both "Converged" and "Max iterations reached"
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Optional
-from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 
 from emergo import (
     Graph,
-    Lux,
     HistoryObserver,
     KernelObserver,
     LoggingObserver,
@@ -29,13 +27,13 @@ from emergo import (
     make_initial_phi,
 )
 from emergo.observer import _NoOpMixin
-from emergo.types import CoordinationEvent, Errors, State
+from emergo.types import CoordinationEvent, Errors
 from tests.conftest import make_ce
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _triangle() -> Graph:
     adj = np.array([[0, 1, 0], [0, 0, 1], [1, 0, 0]], dtype=float)
@@ -61,6 +59,7 @@ def _dummy_errors() -> Errors:
 # ---------------------------------------------------------------------------
 # Protocol conformance
 # ---------------------------------------------------------------------------
+
 
 class TestKernelObserverProtocol:
     def test_logging_observer_is_kernel_observer(self):
@@ -91,6 +90,7 @@ class TestKernelObserverProtocol:
 # ---------------------------------------------------------------------------
 # fire_observers: exception isolation (INV-10)
 # ---------------------------------------------------------------------------
+
 
 class TestFireObserversIsolation:
     def test_exception_in_observer_never_propagates(self):
@@ -140,6 +140,7 @@ class TestFireObserversIsolation:
 # ---------------------------------------------------------------------------
 # HistoryObserver accumulation
 # ---------------------------------------------------------------------------
+
 
 class TestHistoryObserver:
     def test_ce_acceptance_rate_all_accepted(self):
@@ -216,11 +217,12 @@ class TestHistoryObserver:
 # Integration: observers wired into emergo_kernel
 # ---------------------------------------------------------------------------
 
+
 class TestKernelObserverIntegration:
     def test_history_observer_receives_events(self):
         obs = HistoryObserver()
         state = _small_state()
-        final_state, reason = emergo_kernel(
+        _final_state, _reason = emergo_kernel(
             state,
             max_iterations=20,
             observers=[obs],
@@ -275,7 +277,7 @@ class TestKernelObserverIntegration:
 
         state = _small_state()
         # Should complete without raising
-        final_state, reason = emergo_kernel(
+        _final_state, reason = emergo_kernel(
             state,
             max_iterations=10,
             observers=[AlwaysRaises()],

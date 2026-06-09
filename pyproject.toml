@@ -8,7 +8,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "emergo"
-version = "0.1.0"
+version = "0.2.0"
 description = "A self-organizing intelligence engine where agents earn authority by predicting network topology changes."
 readme = "README.md"
 license = { text = "MIT" }
@@ -23,7 +23,7 @@ keywords = [
     "emergent-intelligence",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
@@ -32,6 +32,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
@@ -123,6 +124,7 @@ packages = ["emergo"]
 # Source distributions include everything useful for development.
 include = [
     "emergo/",
+    "lean/",
     "tests/",
     "examples/",
     "docs/",
@@ -132,6 +134,7 @@ include = [
     "SPECIFICATION.md",
     "LICENSE",
     "pyproject.toml",
+    "emergo/SAFETY_SPEC.md",
 ]
 
 # ---------------------------------------------------------------------------
@@ -186,11 +189,12 @@ select = [
     "RUF", # ruff-specific rules
 ]
 ignore = [
-    "ANN101",  # missing type annotation for self
-    "ANN102",  # missing type annotation for cls
     "ANN401",  # Any is fine in a few places
     "E501",    # line too long — black handles this
     "B008",    # function call in default arg (numpy defaults are intentional)
+    "N803",    # mathematical naming convention: G_t, A_t, CE etc. are intentional
+    "N806",    # mathematical naming convention: G_t, A_t, CE etc. are intentional
+    "N815",    # mathematical naming convention: b_F, W_phi etc. are intentional
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -208,7 +212,7 @@ force-sort-within-sections = true
 
 [tool.black]
 line-length    = 100
-target-version = ["py39", "py310", "py311"]
+target-version = ["py39", "py310", "py311", "py312"]
 include        = '\.(py)$'
 
 # ---------------------------------------------------------------------------
@@ -216,7 +220,7 @@ include        = '\.(py)$'
 # ---------------------------------------------------------------------------
 
 [tool.mypy]
-python_version          = "3.9"
+python_version          = "3.10"
 strict                  = false           # relax for first pass; tighten gradually
 warn_return_any         = true
 warn_unused_configs     = true
@@ -230,7 +234,7 @@ pretty                  = true
 
 [[tool.mypy.overrides]]
 # numpy stubs may not be installed; ignore missing imports there
-module = ["numpy.*", "matplotlib.*", "networkx.*", "opentelemetry.*"]
+module = ["numpy.*", "matplotlib.*", "networkx.*", "opentelemetry.*", "lux.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

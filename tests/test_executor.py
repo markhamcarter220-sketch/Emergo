@@ -3,12 +3,13 @@
 Covers: basic execution, resource management, capability enforcement,
 INV-5/6/7/8 enforcement, authority feedback, graph immutability.
 """
+
 import numpy as np
 import pytest
 
 from emergo import (
-    Executor,
     ExecutionResult,
+    Executor,
     Goal,
     Graph,
     Lux,
@@ -19,7 +20,7 @@ from emergo import (
     make_initial_phi,
     mock_task_runner,
 )
-from emergo.config import DEFAULT_TASK_COST, MAX_PENDING_CES_PER_AGENT
+from emergo.config import MAX_PENDING_CES_PER_AGENT
 from emergo.lux_bridge import SimulatedLuxBridge
 from emergo.types import Task
 
@@ -34,7 +35,7 @@ def _make_bridge(initial_budget: float = 100.0) -> SimulatedLuxBridge:
 
 def _make_state(agent_ids=("A", "B", "C")):
     n = len(agent_ids)
-    adj = np.eye(n, k=1, dtype=float) + np.eye(n, k=-(n-1), dtype=float)
+    adj = np.eye(n, k=1, dtype=float) + np.eye(n, k=-(n - 1), dtype=float)
     caps = np.ones((n, 2)) * 0.5
     G0 = Graph(agent_ids=agent_ids, adjacency=adj, capabilities=caps)
     phi0 = make_initial_phi(d_latent=4, d_features=16, d_ce=4)
@@ -56,6 +57,7 @@ def _make_goal(agent: str = "A", budget: float = 10.0) -> Goal:
 # ---------------------------------------------------------------------------
 # Basic execution
 # ---------------------------------------------------------------------------
+
 
 class TestBasicExecution:
     def test_execute_simple_goal_succeeds(self):
@@ -99,6 +101,7 @@ class TestBasicExecution:
 # INV-6: Resource Conservation
 # ---------------------------------------------------------------------------
 
+
 class TestResourceConservation:
     def test_successful_task_deducts_from_ledger(self):
         bridge = _make_bridge(initial_budget=100.0)
@@ -135,6 +138,7 @@ class TestResourceConservation:
     def test_budget_conserved_over_multiple_tasks(self):
         """Planner emitting N tasks: total deducted = sum of task costs."""
         import uuid
+
         bridge = _make_bridge(initial_budget=100.0)
         lux = Lux(bridge=bridge)
 
@@ -162,6 +166,7 @@ class TestResourceConservation:
 # INV-5: Proposal-Only Authority
 # ---------------------------------------------------------------------------
 
+
 class TestProposalOnlyAuthority:
     def test_authority_changes_only_via_error_signal(self):
         """Executor must not directly set authority; it flows through authority_update."""
@@ -169,7 +174,7 @@ class TestProposalOnlyAuthority:
         lux = Lux(bridge=bridge)
         exec_ = Executor(lux=lux)
         state = _make_state()
-        _, _, A_before, _ = state
+        _, _, _A_before, _ = state
         result = exec_.execute(_make_goal(), state)
         _, _, A_after, _ = result.final_state
         # A changed (expected), but both are Authority instances with clamped values
@@ -211,6 +216,7 @@ class TestProposalOnlyAuthority:
 # INV-7: Observable + Fail-Closed
 # ---------------------------------------------------------------------------
 
+
 class TestObservable:
     def test_every_attempt_produces_audit_record(self):
         bridge = _make_bridge()
@@ -223,7 +229,7 @@ class TestObservable:
         bridge = _make_bridge()
         lux = Lux(bridge=bridge)
         exec_ = Executor(lux=lux, task_runner=failing_task_runner)
-        result = exec_.execute(_make_goal(), _make_state())
+        exec_.execute(_make_goal(), _make_state())
         log = bridge.get_audit_log()
         failures = [r for r in log if not r["success"]]
         assert len(failures) >= 1
@@ -249,6 +255,7 @@ class TestObservable:
 # INV-8: Bounded Speculation
 # ---------------------------------------------------------------------------
 
+
 class TestBoundedSpeculation:
     def test_task_at_max_depth_rejected(self):
         bridge = _make_bridge()
@@ -258,25 +265,34 @@ class TestBoundedSpeculation:
         class DeepPlanner(Planner):
             def decompose(self, goal, G, A):
                 import uuid
-                return [Task(
-                    task_id=str(uuid.uuid4()),
-                    description="deep task",
-                    required_capability=goal.required_capability,
-                    initiating_agent=goal.initiating_agent,
-                    resource_cost=1.0,
-                    depth=99,  # way beyond any max_depth
-                )]
+
+                return [
+                    Task(
+                        task_id=str(uuid.uuid4()),
+                        description="deep task",
+                        required_capability=goal.required_capability,
+                        initiating_agent=goal.initiating_agent,
+                        resource_cost=1.0,
+                        depth=99,  # way beyond any max_depth
+                    )
+                ]
 
         exec_ = Executor(lux=lux, planner=DeepPlanner())
         goal = Goal(
-            goal_id="g2", description="deep", required_capability="test_cap",
-            initiating_agent="A", resource_budget=10.0, max_depth=3,
+            goal_id="g2",
+            description="deep",
+            required_capability="test_cap",
+            initiating_agent="A",
+            resource_budget=10.0,
+            max_depth=3,
         )
         result = exec_.execute(goal, _make_state())
         assert result.tasks_succeeded == 0
         # Audit record written for the rejection
         log = bridge.get_audit_log()
-        depth_rejections = [r for r in log if r.get("details", {}).get("reason") == "depth_exceeded"]
+        depth_rejections = [
+            r for r in log if r.get("details", {}).get("reason") == "depth_exceeded"
+        ]
         assert len(depth_rejections) >= 1
 
     def test_pending_quota_exceeded(self):
@@ -291,8 +307,7 @@ class TestBoundedSpeculation:
         assert result.tasks_succeeded == 0
         log = bridge.get_audit_log()
         quota_rejections = [
-            r for r in log
-            if r.get("details", {}).get("reason") == "pending_quota_exceeded"
+            r for r in log if r.get("details", {}).get("reason") == "pending_quota_exceeded"
         ]
         assert len(quota_rejections) >= 1
 

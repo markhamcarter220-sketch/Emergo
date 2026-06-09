@@ -10,6 +10,7 @@ Three consistency conditions:
 
 Integration tests validate the theorem end-to-end.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -32,10 +33,10 @@ from emergo import (
 from emergo.types import PhiMap
 from tests.conftest import make_ce
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_graph(agent_ids=("A", "B", "C"), edge_density=0.5) -> Graph:
     n = len(agent_ids)
@@ -70,6 +71,7 @@ def _make_lux_with_caps(*agents: str) -> Lux:
 # ---------------------------------------------------------------------------
 # C1: Well-Definedness — ℱ produces unique, deterministic successors
 # ---------------------------------------------------------------------------
+
 
 class TestConsistency1WellDefinedness:
     def test_ce_execution_is_deterministic(self):
@@ -134,9 +136,9 @@ class TestConsistency1WellDefinedness:
         phi_returned, _ = phi_update(phi_zero, [G, G], [CE], [], n_steps=5, rank_lambda=0.5)
 
         # Regularization updated W_phi (did NOT revert to all-zeros)
-        assert not np.allclose(phi_returned.W_phi, 0.0), (
-            "rank regularization should push W_phi away from zero, not revert"
-        )
+        assert not np.allclose(
+            phi_returned.W_phi, 0.0
+        ), "rank regularization should push W_phi away from zero, not revert"
 
     def test_error_scope_is_ce_participants_only(self):
         """ErrorComputation attributes errors only to CE participants, not observers."""
@@ -158,6 +160,7 @@ class TestConsistency1WellDefinedness:
 # ---------------------------------------------------------------------------
 # C2: Stability — authority stays bounded; no runaway feedback
 # ---------------------------------------------------------------------------
+
 
 class TestConsistency2Stability:
     def test_authority_bounded_after_repeated_updates(self):
@@ -199,8 +202,8 @@ class TestConsistency2Stability:
         A_y_won = authority_update(A_bad, err_y_wins, eta=0.05)
 
         assert A_x_won.get("X") > A_y_won.get("X")
-        assert A_x_won.get("X") > 0.5   # good predictor gained authority
-        assert A_y_won.get("X") < 0.5   # bad predictor lost authority
+        assert A_x_won.get("X") > 0.5  # good predictor gained authority
+        assert A_y_won.get("X") < 0.5  # bad predictor lost authority
 
     def test_authority_update_order_independence(self):
         """Authority update reads from A_t, not A_next — order is irrelevant."""
@@ -212,8 +215,8 @@ class TestConsistency2Stability:
 
         # Compute expected values analytically using A_t (not A_next)
         max_err = errors.max_error()  # 0.8
-        corr_A = 1.0 - 0.2 / max_err   # 0.75
-        corr_B = 1.0 - 0.8 / max_err   # 0.0
+        corr_A = 1.0 - 0.2 / max_err  # 0.75
+        corr_B = 1.0 - 0.8 / max_err  # 0.0
         expected_A = float(np.clip(0.4 + eta * (corr_A - 0.5), 0.0, 1.0))
         expected_B = float(np.clip(0.7 + eta * (corr_B - 0.5), 0.0, 1.0))
 
@@ -241,13 +244,9 @@ class TestConsistency2Stability:
         A_init = Authority(scores={"A": 0.5}, baseline=0.5)
 
         # Best case: correctness=1, delta=+0.5
-        A_best = authority_update(
-            A_init, Errors(per_agent={"A": 0.0, "dummy": 1.0}), eta=eta
-        )
+        A_best = authority_update(A_init, Errors(per_agent={"A": 0.0, "dummy": 1.0}), eta=eta)
         # Worst case: correctness=0, delta=-0.5
-        A_worst = authority_update(
-            A_init, Errors(per_agent={"A": 1.0, "dummy": 0.0}), eta=eta
-        )
+        A_worst = authority_update(A_init, Errors(per_agent={"A": 1.0, "dummy": 0.0}), eta=eta)
 
         gain = abs(A_best.get("A") - A_init.get("A"))
         loss = abs(A_worst.get("A") - A_init.get("A"))
@@ -261,6 +260,7 @@ class TestConsistency2Stability:
 # ---------------------------------------------------------------------------
 # C3: Identifiability — φ converges to real topology structure
 # ---------------------------------------------------------------------------
+
 
 class TestConsistency3Identifiability:
     def test_phi_loss_decreases_after_training(self):
@@ -296,7 +296,8 @@ class TestConsistency3Identifiability:
         caps = np.ones((n, 2)) * 0.5
 
         # 1 edge vs 6 edges
-        adj_1 = np.zeros((n, n)); adj_1[0, 1] = 1.0
+        adj_1 = np.zeros((n, n))
+        adj_1[0, 1] = 1.0
         adj_6 = np.triu(np.ones((n, n)) - np.eye(n))
         G_1 = Graph(agent_ids=ids, adjacency=adj_1, capabilities=caps)
         G_6 = Graph(agent_ids=ids, adjacency=adj_6, capabilities=caps)
@@ -334,6 +335,7 @@ class TestConsistency3Identifiability:
 # Integration: Core Theorem Validation
 # ---------------------------------------------------------------------------
 
+
 class TestCoreTheoremValidation:
     def test_better_predictor_gains_authority_over_time(self):
         """Core theorem: consistently lower prediction error → higher authority."""
@@ -345,9 +347,9 @@ class TestCoreTheoremValidation:
             errors = Errors(per_agent={"A": 0.0, "B": rng.random() + 0.1})
             A = authority_update(A, errors, eta=0.05)
 
-        assert A.get("A") > A.get("B"), (
-            "Better predictor (A) must accumulate more authority than worse predictor (B)"
-        )
+        assert A.get("A") > A.get(
+            "B"
+        ), "Better predictor (A) must accumulate more authority than worse predictor (B)"
         assert A.get("A") > 0.5, "Good predictor's authority must rise above baseline"
         assert A.get("B") < 0.5, "Poor predictor's authority must fall below baseline"
 
@@ -379,7 +381,7 @@ class TestCoreTheoremValidation:
         A0 = make_initial_authority(("A", "B", "C"))
         initial_state = (G0, phi0, A0, [])
 
-        final_state, reason, diag = emergo_kernel(
+        _final_state, _reason, diag = emergo_kernel(
             initial_state=initial_state,
             max_iterations=50,
             collect_diagnostics=True,
@@ -387,9 +389,9 @@ class TestCoreTheoremValidation:
         )
 
         accepted = sum(1 for r in diag.records if r.ce_accepted)
-        assert accepted > 10, (
-            f"Only {accepted} CEs accepted in 50 iterations — authority likely collapsed"
-        )
+        assert (
+            accepted > 10
+        ), f"Only {accepted} CEs accepted in 50 iterations — authority likely collapsed"
 
     def test_end_to_end_state_progression(self):
         """State machine (G, φ, A, E) evolves correctly through the kernel loop."""
@@ -407,7 +409,7 @@ class TestCoreTheoremValidation:
             convergence_threshold=1e-2,
         )
 
-        G_final, phi_final, A_final, E_final = final_state
+        G_final, phi_final, A_final, _E_final = final_state
 
         assert reason in ("Converged", "Max iterations reached")
         assert isinstance(G_final, Graph)

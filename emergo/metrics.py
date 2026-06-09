@@ -28,11 +28,12 @@ Usage::
     obs.enable_otel(endpoint="http://localhost:4317")
     obs.flush_otel()
 """
+
 from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from emergo.observer import _NoOpMixin
 from emergo.types import CoordinationEvent, Errors, State
@@ -67,9 +68,9 @@ class MetricsObserver(_NoOpMixin):
 
     def __init__(self, namespace: str = "emergo") -> None:
         self._ns = namespace
-        self._otel_meter = None
-        self._otel_instruments: Dict[str, Any] = {}
-        self._start: Optional[float] = None
+        self._otel_meter: Any = None
+        self._otel_instruments: dict[str, Any] = {}
+        self._start: float | None = None
 
         # Counters
         self._ce_attempts = 0
@@ -80,13 +81,13 @@ class MetricsObserver(_NoOpMixin):
         self._convergence_count = 0
 
         # Gauges
-        self._authority_mean: Optional[float] = None
-        self._authority_min: Optional[float] = None
-        self._authority_max: Optional[float] = None
-        self._mean_error_last: Optional[float] = None
-        self._phi_loss_last: Optional[float] = None
-        self._edge_count_last: Optional[int] = None
-        self._kernel_duration_seconds: Optional[float] = None
+        self._authority_mean: float | None = None
+        self._authority_min: float | None = None
+        self._authority_max: float | None = None
+        self._mean_error_last: float | None = None
+        self._phi_loss_last: float | None = None
+        self._edge_count_last: int | None = None
+        self._kernel_duration_seconds: float | None = None
 
     # ------------------------------------------------------------------
     # KernelObserver hooks
@@ -107,7 +108,7 @@ class MetricsObserver(_NoOpMixin):
         t: int,
         ce: CoordinationEvent,
         accepted: bool,
-        errors: Optional[Errors],
+        errors: Errors | None,
     ) -> None:
         self._ce_attempts += 1
         if accepted:
@@ -135,10 +136,9 @@ class MetricsObserver(_NoOpMixin):
     # Export
     # ------------------------------------------------------------------
 
-    def snapshot(self) -> Dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         """Return all metrics as a flat dict."""
-        rate = (self._ce_accepted / self._ce_attempts
-                if self._ce_attempts > 0 else 0.0)
+        rate = self._ce_accepted / self._ce_attempts if self._ce_attempts > 0 else 0.0
         return {
             f"{self._ns}_ce_attempts_total": self._ce_attempts,
             f"{self._ns}_ce_accepted_total": self._ce_accepted,
@@ -165,22 +165,22 @@ class MetricsObserver(_NoOpMixin):
             # TYPE emergo_ce_attempts_total counter
             emergo_ce_attempts_total 42
         """
-        lines: List[str] = []
+        lines: list[str] = []
         _HELP = {
-            "ce_attempts_total":       ("counter", "Total CE attempts"),
-            "ce_accepted_total":       ("counter", "CEs accepted by Lux"),
-            "ce_rejected_total":       ("counter", "CEs rejected by Lux"),
-            "phi_updates_total":       ("counter", "Number of phi_update calls"),
-            "kernel_runs_total":       ("counter", "Kernel run completions"),
-            "convergence_total":       ("counter", "Runs that converged"),
-            "authority_mean":          ("gauge",   "Mean authority score (last iter)"),
-            "authority_min":           ("gauge",   "Minimum authority score (last iter)"),
-            "authority_max":           ("gauge",   "Maximum authority score (last iter)"),
-            "mean_error_last":         ("gauge",   "Last mean phi-prediction error"),
-            "phi_loss_last":           ("gauge",   "Last phi_update loss"),
-            "edge_count_last":         ("gauge",   "Active edge count (last accepted CE)"),
-            "kernel_duration_seconds": ("gauge",   "Wall time of last kernel run (s)"),
-            "ce_acceptance_rate":      ("gauge",   "Fraction of CEs accepted"),
+            "ce_attempts_total": ("counter", "Total CE attempts"),
+            "ce_accepted_total": ("counter", "CEs accepted by Lux"),
+            "ce_rejected_total": ("counter", "CEs rejected by Lux"),
+            "phi_updates_total": ("counter", "Number of phi_update calls"),
+            "kernel_runs_total": ("counter", "Kernel run completions"),
+            "convergence_total": ("counter", "Runs that converged"),
+            "authority_mean": ("gauge", "Mean authority score (last iter)"),
+            "authority_min": ("gauge", "Minimum authority score (last iter)"),
+            "authority_max": ("gauge", "Maximum authority score (last iter)"),
+            "mean_error_last": ("gauge", "Last mean phi-prediction error"),
+            "phi_loss_last": ("gauge", "Last phi_update loss"),
+            "edge_count_last": ("gauge", "Active edge count (last accepted CE)"),
+            "kernel_duration_seconds": ("gauge", "Wall time of last kernel run (s)"),
+            "ce_acceptance_rate": ("gauge", "Fraction of CEs accepted"),
         }
         snap = self.snapshot()
         for suffix, (mtype, help_text) in _HELP.items():
@@ -210,13 +210,15 @@ class MetricsObserver(_NoOpMixin):
         (or -http).  Returns True on success, False if the packages are absent.
         """
         try:
-            from opentelemetry import metrics as otel_metrics  # type: ignore
-            from opentelemetry.sdk.metrics import MeterProvider  # type: ignore
-            from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader  # type: ignore
-            from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (  # type: ignore
+            from opentelemetry import metrics as otel_metrics
+            from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
                 OTLPMetricExporter,
             )
-            from opentelemetry.sdk.resources import Resource  # type: ignore
+            from opentelemetry.sdk.metrics import MeterProvider
+            from opentelemetry.sdk.metrics.export import (
+                PeriodicExportingMetricReader,
+            )
+            from opentelemetry.sdk.resources import Resource
         except ImportError:
             logger.warning(
                 "emergo.metrics: opentelemetry-sdk not installed — OTEL export disabled. "
@@ -256,8 +258,12 @@ class MetricsObserver(_NoOpMixin):
         snap = self.snapshot()
         instr = self._otel_instruments
         # Counters: add current total (provider tracks monotonicity)
-        for key in ("ce_attempts_total", "ce_accepted_total",
-                    "phi_updates_total", "convergence_total"):
+        for key in (
+            "ce_attempts_total",
+            "ce_accepted_total",
+            "phi_updates_total",
+            "convergence_total",
+        ):
             full = f"{self._ns}_{key}"
             val = snap.get(full, 0) or 0
             if key in instr:

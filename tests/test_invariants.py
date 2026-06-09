@@ -11,25 +11,25 @@ INV-8:  Bounded Speculation — depth + pending CE quota enforced.
 INV-9:  Coordinator Serialization — proposals sorted by authority; no dup edge writes.
 INV-10: Observer Isolation — observer exceptions never propagate to the kernel.
 """
+
 import uuid
 
 import numpy as np
 import pytest
 
 from emergo import (
-    CoordinationRound,
+    CoordinationEvent,
     Executor,
     Goal,
     Graph,
-    CoordinationEvent,
     Lux,
     MultiAgentCoordinator,
     Planner,
     ProposedCE,
     TaskOutcome,
+    authority_update,
     ce_execute,
     error_computation,
-    authority_update,
     failing_task_runner,
     make_initial_authority,
     make_initial_phi,
@@ -51,6 +51,7 @@ def _triangle() -> Graph:
 # ---------------------------------------------------------------------------
 # Invariant 1: State Ownership
 # ---------------------------------------------------------------------------
+
 
 class TestInvariant1StateOwnership:
     def test_ce_execute_does_not_mutate_input_graph(self):
@@ -90,6 +91,7 @@ class TestInvariant1StateOwnership:
 # Invariant 2: Feedback Loop
 # ---------------------------------------------------------------------------
 
+
 class TestInvariant2FeedbackLoop:
     def test_error_drives_authority_change(self):
         A = make_initial_authority(("A", "B"), baseline=0.5)
@@ -102,6 +104,7 @@ class TestInvariant2FeedbackLoop:
     def test_authority_influences_ce_sampling_direction(self):
         """Higher authority → higher sampling weight in softmax."""
         from emergo.proposal import DefaultProposalGenerator
+
         G = _triangle()
         A = Authority(
             scores={"A": 0.9, "B": 0.1, "C": 0.1},
@@ -120,6 +123,7 @@ class TestInvariant2FeedbackLoop:
     def test_error_computation_reflects_phi_change(self):
         """After phi_update reduces loss, error_computation should give smaller errors."""
         from emergo.phi_update import phi_update
+
         G = _triangle()
         phi = make_initial_phi(d_latent=4, d_features=16, d_ce=4, seed=7)
         ce = make_ce("add_edge", ("A", "C"), weight=0.5)
@@ -129,7 +133,7 @@ class TestInvariant2FeedbackLoop:
 
         g_hist = [G, G_next] * 5  # repeated pattern
         ce_hist = [ce] * (len(g_hist) - 1)
-        phi_fitted, loss_after = phi_update(phi, g_hist, ce_hist, [], n_steps=100, lr=5e-3)
+        phi_fitted, _loss_after = phi_update(phi, g_hist, ce_hist, [], n_steps=100, lr=5e-3)
 
         err_before = error_computation(G, G_next, phi, ce).mean_error()
         err_after = error_computation(G, G_next, phi_fitted, ce).mean_error()
@@ -140,6 +144,7 @@ class TestInvariant2FeedbackLoop:
 # ---------------------------------------------------------------------------
 # Invariant 3: Blast Radius
 # ---------------------------------------------------------------------------
+
 
 class TestInvariant3BlastRadius:
     def test_unauthorized_ce_leaves_graph_unchanged(self):
@@ -170,9 +175,9 @@ class TestInvariant3BlastRadius:
         ce = make_ce("add_edge", ("A", "B"), weight=0.5)
         # rank_lambda > 0 injects nuclear-norm gradient, pushing W_phi away from zero
         phi_next, _ = phi_update(phi, [G, G], [ce], [], n_steps=5, rank_lambda=0.5)
-        assert not np.allclose(phi_next.W_phi, 0.0), (
-            "rank regularization should recover W_phi from collapse, not revert"
-        )
+        assert not np.allclose(
+            phi_next.W_phi, 0.0
+        ), "rank regularization should recover W_phi from collapse, not revert"
 
     def test_removing_nonexistent_agent_fails_safely(self):
         G = _triangle()
@@ -186,6 +191,7 @@ class TestInvariant3BlastRadius:
 # ---------------------------------------------------------------------------
 # Invariant 4: Timing (sequential, atomic, deterministic)
 # ---------------------------------------------------------------------------
+
 
 class TestInvariant4Timing:
     def test_ce_execution_is_deterministic(self):
@@ -234,6 +240,7 @@ class TestInvariant4Timing:
 # Shared helpers for INV-5/6/7/8
 # ---------------------------------------------------------------------------
 
+
 def _exec_state(agent_ids=("A", "B")):
     n = len(agent_ids)
     adj = np.zeros((n, n))
@@ -265,6 +272,7 @@ def _lux_with_cap(*agents: str, budget: float = 100.0) -> Lux:
 # ---------------------------------------------------------------------------
 # INV-5: Proposal-Only Authority
 # ---------------------------------------------------------------------------
+
 
 class TestInvariant5ProposalOnlyAuthority:
     def test_authority_always_in_unit_interval(self):
@@ -327,6 +335,7 @@ class TestInvariant5ProposalOnlyAuthority:
 # ---------------------------------------------------------------------------
 # INV-6: Resource Conservation via Lux Ledger
 # ---------------------------------------------------------------------------
+
 
 class TestInvariant6ResourceConservation:
     def test_successful_task_deducts_resource(self):
@@ -393,6 +402,7 @@ class TestInvariant6ResourceConservation:
 # INV-7: Observable + Fail-Closed Propagation
 # ---------------------------------------------------------------------------
 
+
 class TestInvariant7Observable:
     def test_every_ce_attempt_produces_audit(self):
         bridge = SimulatedLuxBridge(initial_budget=100.0)
@@ -450,6 +460,7 @@ class TestInvariant7Observable:
 # INV-8: Bounded Speculation
 # ---------------------------------------------------------------------------
 
+
 class TestInvariant8BoundedSpeculation:
     def test_depth_exceeded_rejects_task(self):
         bridge = SimulatedLuxBridge(initial_budget=100.0)
@@ -458,25 +469,31 @@ class TestInvariant8BoundedSpeculation:
 
         class DeepPlanner(Planner):
             def decompose(self, goal, G, A):
-                return [Task(
-                    task_id=str(uuid.uuid4()),
-                    description="deep",
-                    required_capability=goal.required_capability,
-                    initiating_agent=goal.initiating_agent,
-                    resource_cost=1.0,
-                    depth=MAX_DECOMPOSITION_DEPTH + 1,
-                )]
+                return [
+                    Task(
+                        task_id=str(uuid.uuid4()),
+                        description="deep",
+                        required_capability=goal.required_capability,
+                        initiating_agent=goal.initiating_agent,
+                        resource_cost=1.0,
+                        depth=MAX_DECOMPOSITION_DEPTH + 1,
+                    )
+                ]
 
         exec_ = Executor(lux=lux, planner=DeepPlanner())
         goal = Goal(
-            goal_id="g", description="deep", required_capability="test_cap",
-            initiating_agent="A", resource_budget=10.0,
+            goal_id="g",
+            description="deep",
+            required_capability="test_cap",
+            initiating_agent="A",
+            resource_budget=10.0,
             max_depth=MAX_DECOMPOSITION_DEPTH,
         )
         result = exec_.execute(goal, _exec_state())
         assert result.tasks_succeeded == 0
         rejections = [
-            r for r in bridge.get_audit_log()
+            r
+            for r in bridge.get_audit_log()
             if r.get("details", {}).get("reason") == "depth_exceeded"
         ]
         assert len(rejections) >= 1
@@ -516,28 +533,38 @@ class TestInvariant8BoundedSpeculation:
 
         class OneLevelDeepPlanner(Planner):
             def decompose(self, goal, G, A):
-                return [Task(
-                    task_id=str(uuid.uuid4()),
-                    description="one level deep",
-                    required_capability=goal.required_capability,
-                    initiating_agent=goal.initiating_agent,
-                    resource_cost=1.0,
-                    depth=1,
-                )]
+                return [
+                    Task(
+                        task_id=str(uuid.uuid4()),
+                        description="one level deep",
+                        required_capability=goal.required_capability,
+                        initiating_agent=goal.initiating_agent,
+                        resource_cost=1.0,
+                        depth=1,
+                    )
+                ]
 
         exec_ = Executor(lux=lux, planner=OneLevelDeepPlanner())
         # max_depth=0: depth=1 is rejected
         shallow_goal = Goal(
-            goal_id="g", description="shallow", required_capability="test_cap",
-            initiating_agent="A", resource_budget=10.0, max_depth=0,
+            goal_id="g",
+            description="shallow",
+            required_capability="test_cap",
+            initiating_agent="A",
+            resource_budget=10.0,
+            max_depth=0,
         )
         result = exec_.execute(shallow_goal, _exec_state())
         assert result.tasks_succeeded == 0
 
         # max_depth=1: depth=1 is accepted
         deeper_goal = Goal(
-            goal_id="g2", description="deeper", required_capability="test_cap",
-            initiating_agent="A", resource_budget=10.0, max_depth=1,
+            goal_id="g2",
+            description="deeper",
+            required_capability="test_cap",
+            initiating_agent="A",
+            resource_budget=10.0,
+            max_depth=1,
         )
         exec_.reset_pending()
         result2 = exec_.execute(deeper_goal, _exec_state())
@@ -547,6 +574,7 @@ class TestInvariant8BoundedSpeculation:
 # ---------------------------------------------------------------------------
 # INV-9: Coordinator Serialization
 # ---------------------------------------------------------------------------
+
 
 def _coord_state(agent_ids=("A", "B", "C")):
     n = len(agent_ids)
@@ -570,10 +598,13 @@ class TestInvariant9CoordinatorSerialization:
 
         coord = MultiAgentCoordinator(lux=Lux())
         ce = make_ce("add_edge", ("A", "B"), weight=0.5)
-        round_ = coord.coordinate([
-            ProposedCE("B", ce, priority=0.2),  # lower authority
-            ProposedCE("A", ce, priority=0.8),  # higher authority
-        ], state)
+        round_ = coord.coordinate(
+            [
+                ProposedCE("B", ce, priority=0.2),  # lower authority
+                ProposedCE("A", ce, priority=0.8),  # higher authority
+            ],
+            state,
+        )
 
         accepted_agents = [p.agent_id for p in round_.accepted]
         assert "A" in accepted_agents
@@ -632,7 +663,7 @@ class TestInvariant9CoordinatorSerialization:
             ProposedCE("B", make_ce("add_edge", ("B", "C"), weight=0.3)),
         ]
         round_ = coord.coordinate(proposals, state)
-        G_out, phi_out, A_out, E_out = round_.final_state
+        G_out, _phi_out, A_out, _E_out = round_.final_state
 
         # Read-only enforcement preserved
         assert not G_out.adjacency.flags.writeable
@@ -646,6 +677,7 @@ class TestInvariant9CoordinatorSerialization:
 # ---------------------------------------------------------------------------
 # INV-10: Observer Isolation
 # ---------------------------------------------------------------------------
+
 
 class TestInvariant10ObserverIsolation:
     """INV-10: Observers are strictly read-only.
@@ -674,7 +706,8 @@ class TestInvariant10ObserverIsolation:
                 raise RuntimeError("boom")
 
         from emergo import emergo_kernel
-        final, reason = emergo_kernel(
+
+        _final, reason = emergo_kernel(
             self._small_state(),
             max_iterations=10,
             observers=[AlwaysCrashes()],
@@ -701,11 +734,11 @@ class TestInvariant10ObserverIsolation:
 
     def test_kernel_state_unchanged_by_crashing_observer(self):
         """A crashing observer must not corrupt the kernel's state tuple."""
-        from emergo.observer import _NoOpMixin
         from emergo import emergo_kernel
+        from emergo.observer import _NoOpMixin
 
         initial = self._small_state()
-        G0, phi0, A0, _ = initial
+        _G0, _phi0, _A0, _ = initial
 
         class MutationAttempt(_NoOpMixin):
             def on_iteration_start(self, t, state):
@@ -715,7 +748,7 @@ class TestInvariant10ObserverIsolation:
                 except (ValueError, TypeError):
                     pass
 
-        final, reason = emergo_kernel(
+        final, _reason = emergo_kernel(
             initial,
             max_iterations=5,
             observers=[MutationAttempt()],
@@ -727,8 +760,8 @@ class TestInvariant10ObserverIsolation:
 
     def test_observer_cannot_alter_authority_scores(self):
         """Observer receives a snapshot dict; mutating it must not affect kernel A."""
-        from emergo.observer import _NoOpMixin
         from emergo import emergo_kernel
+        from emergo.observer import _NoOpMixin
 
         class ScoreSmasher(_NoOpMixin):
             def on_iteration_start(self, t, state):
@@ -739,7 +772,7 @@ class TestInvariant10ObserverIsolation:
                 except (AttributeError, TypeError):
                     pass
 
-        final, reason = emergo_kernel(
+        final, _reason = emergo_kernel(
             self._small_state(),
             max_iterations=10,
             observers=[ScoreSmasher()],
@@ -752,8 +785,8 @@ class TestInvariant10ObserverIsolation:
 
     def test_on_kernel_done_fired_for_both_termination_reasons(self):
         """on_kernel_done must be called for both 'Converged' and 'Max iterations reached'."""
-        from emergo.observer import _NoOpMixin
         from emergo import emergo_kernel
+        from emergo.observer import _NoOpMixin
 
         reasons_seen = []
 

@@ -21,11 +21,12 @@ Usage::
     print(f"Acceptance rate: {obs.ce_acceptance_rate:.0%}")
     print(f"Final mean error: {obs.mean_errors[-1]:.4f}")
 """
+
 from __future__ import annotations
 
 import logging
 import time
-from typing import Dict, List, Optional, Protocol, Tuple, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from emergo.types import CoordinationEvent, Errors, State
 
@@ -35,6 +36,7 @@ _obs_logger = logging.getLogger("emergo.observer")
 # ---------------------------------------------------------------------------
 # Protocol
 # ---------------------------------------------------------------------------
+
 
 @runtime_checkable
 class KernelObserver(Protocol):
@@ -53,7 +55,7 @@ class KernelObserver(Protocol):
         t: int,
         ce: CoordinationEvent,
         accepted: bool,
-        errors: Optional[Errors],
+        errors: Errors | None,
     ) -> None:
         """Called after CE execution.  errors is None for rejected CEs."""
 
@@ -68,10 +70,11 @@ class KernelObserver(Protocol):
 # Mixin with default no-op implementations
 # ---------------------------------------------------------------------------
 
+
 class _NoOpMixin:
     """Default no-op implementations — subclass and override what you need."""
 
-    def on_iteration_start(self, t: int, state: State) -> None:  # noqa: D401
+    def on_iteration_start(self, t: int, state: State) -> None:
         pass
 
     def on_ce_result(
@@ -79,7 +82,7 @@ class _NoOpMixin:
         t: int,
         ce: CoordinationEvent,
         accepted: bool,
-        errors: Optional[Errors],
+        errors: Errors | None,
     ) -> None:
         pass
 
@@ -93,6 +96,7 @@ class _NoOpMixin:
 # ---------------------------------------------------------------------------
 # Concrete observers
 # ---------------------------------------------------------------------------
+
 
 class LoggingObserver(_NoOpMixin):
     """Writes periodic iteration summaries to Python logging.
@@ -120,7 +124,7 @@ class LoggingObserver(_NoOpMixin):
         t: int,
         ce: CoordinationEvent,
         accepted: bool,
-        errors: Optional[Errors],
+        errors: Errors | None,
     ) -> None:
         self._n_total += 1
         if accepted:
@@ -131,14 +135,21 @@ class LoggingObserver(_NoOpMixin):
             self._logger.log(
                 self._level,
                 "t=%d ce=%s accepted=%s accept_rate=%.0f%%%s",
-                t, ce.event_type, accepted, rate, err_str,
+                t,
+                ce.event_type,
+                accepted,
+                rate,
+                err_str,
             )
 
     def on_kernel_done(self, reason: str, state: State, n_iterations: int) -> None:
         self._logger.log(
             self._level,
             "Kernel done: reason=%r n_iter=%d accepted=%d/%d",
-            reason, n_iterations, self._n_accepted, self._n_total,
+            reason,
+            n_iterations,
+            self._n_accepted,
+            self._n_total,
         )
 
 
@@ -154,11 +165,11 @@ class HistoryObserver(_NoOpMixin):
 
     def __init__(self, max_records: int = 10_000) -> None:
         self._max = max_records
-        self._authority_history: List[Dict[str, float]] = []
-        self._ce_history: List[Tuple[str, bool]] = []   # (event_type, accepted)
-        self._error_history: List[float] = []
-        self._phi_losses: List[Tuple[int, float]] = []
-        self._edge_counts: List[int] = []
+        self._authority_history: list[dict[str, float]] = []
+        self._ce_history: list[tuple[str, bool]] = []  # (event_type, accepted)
+        self._error_history: list[float] = []
+        self._phi_losses: list[tuple[int, float]] = []
+        self._edge_counts: list[int] = []
         self._start = time.monotonic()
 
     # ----- hooks -----
@@ -166,7 +177,7 @@ class HistoryObserver(_NoOpMixin):
     def on_iteration_start(self, t: int, state: State) -> None:
         if len(self._authority_history) >= self._max:
             return
-        G, phi, A, E = state
+        G, _phi, A, _E = state
         # Shallow copy of scores dict — no live reference retained
         self._authority_history.append(dict(A.scores))
         self._edge_counts.append(int((G.adjacency > 0).sum()))
@@ -176,7 +187,7 @@ class HistoryObserver(_NoOpMixin):
         t: int,
         ce: CoordinationEvent,
         accepted: bool,
-        errors: Optional[Errors],
+        errors: Errors | None,
     ) -> None:
         if len(self._ce_history) >= self._max:
             return
@@ -190,12 +201,12 @@ class HistoryObserver(_NoOpMixin):
     # ----- properties -----
 
     @property
-    def authority_history(self) -> List[Dict[str, float]]:
+    def authority_history(self) -> list[dict[str, float]]:
         """Per-iteration authority score snapshots (list of dicts)."""
         return list(self._authority_history)
 
     @property
-    def edge_count_history(self) -> List[int]:
+    def edge_count_history(self) -> list[int]:
         """Active edge count per accepted iteration."""
         return list(self._edge_counts)
 
@@ -206,12 +217,12 @@ class HistoryObserver(_NoOpMixin):
         return accepted / len(self._ce_history) if self._ce_history else 0.0
 
     @property
-    def mean_errors(self) -> List[float]:
+    def mean_errors(self) -> list[float]:
         """Mean prediction error per accepted iteration."""
         return list(self._error_history)
 
     @property
-    def phi_losses(self) -> List[Tuple[int, float]]:
+    def phi_losses(self) -> list[tuple[int, float]]:
         """(iteration, loss) pairs from each phi_update call."""
         return list(self._phi_losses)
 
@@ -220,7 +231,7 @@ class HistoryObserver(_NoOpMixin):
         """Wall-clock seconds since this observer was created."""
         return time.monotonic() - self._start
 
-    def summary(self) -> Dict[str, object]:
+    def summary(self) -> dict[str, object]:
         """Return a plain-dict summary suitable for logging or JSON export."""
         return {
             "n_iterations_seen": len(self._ce_history),
@@ -235,7 +246,8 @@ class HistoryObserver(_NoOpMixin):
 # Dispatcher (called by kernel — INV-10 enforcement)
 # ---------------------------------------------------------------------------
 
-def fire_observers(observers: List, method: str, *args, **kwargs) -> None:
+
+def fire_observers(observers: list, method: str, *args: object, **kwargs: object) -> None:
     """Call method on each observer, catching all exceptions (INV-10).
 
     Exceptions are logged at WARNING level and never re-raised.
@@ -246,8 +258,10 @@ def fire_observers(observers: List, method: str, *args, **kwargs) -> None:
     for obs in observers:
         try:
             getattr(obs, method)(*args, **kwargs)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _obs_logger.warning(
                 "Observer %s.%s raised (suppressed per INV-10): %s",
-                type(obs).__name__, method, exc,
+                type(obs).__name__,
+                method,
+                exc,
             )

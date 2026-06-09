@@ -22,11 +22,12 @@ Invariants enforced here:
       pending[agent] >= MAX_PENDING →  CE rejected (logged, not executed)
       Pending count decrements after each task completes (success or failure).
 """
+
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple
+import logging
+from typing import Callable
 
 import numpy as np
 
@@ -34,8 +35,6 @@ from emergo.authority_update import authority_update
 from emergo.ce_execution import ce_execute
 from emergo.config import (
     DEFAULT_ETA,
-    DEFAULT_TASK_COST,
-    MAX_DECOMPOSITION_DEPTH,
     MAX_PENDING_CES_PER_AGENT,
     PHI_UPDATE_INTERVAL,
 )
@@ -46,7 +45,6 @@ from emergo.planner import Planner
 from emergo.types import (
     Authority,
     CoordinationEvent,
-    Errors,
     Goal,
     Graph,
     PhiMap,
@@ -61,13 +59,14 @@ logger = logging.getLogger(__name__)
 # Execution-layer result types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class TaskOutcome:
     """Result returned by a TaskRunner for a single Task."""
 
     task_id: str
     success: bool
-    capability_delta: Dict[str, float]  # {dimension_name: delta} applied to capabilities
+    capability_delta: dict[str, float]  # {dimension_name: delta} applied to capabilities
     resource_consumed: float
     notes: str = ""
 
@@ -77,12 +76,12 @@ class ExecutionResult:
     """Summary of executing a complete Goal."""
 
     goal_id: str
-    success: bool              # True iff at least one task succeeded
+    success: bool  # True iff at least one task succeeded
     tasks_attempted: int
     tasks_succeeded: int
     resources_spent: float
     final_state: State
-    audit_ids: List[str] = field(default_factory=list)
+    audit_ids: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +122,7 @@ def failing_task_runner(task: Task) -> TaskOutcome:
 # Executor
 # ---------------------------------------------------------------------------
 
+
 class Executor:
     """Orchestrates goal execution over the Emergo state machine.
 
@@ -135,9 +135,9 @@ class Executor:
 
     def __init__(
         self,
-        lux: Optional[Lux] = None,
-        task_runner: Optional[TaskRunner] = None,
-        planner: Optional[Planner] = None,
+        lux: Lux | None = None,
+        task_runner: TaskRunner | None = None,
+        planner: Planner | None = None,
         eta: float = DEFAULT_ETA,
         phi_update_interval: int = PHI_UPDATE_INTERVAL,
     ) -> None:
@@ -148,11 +148,11 @@ class Executor:
         self._phi_update_interval = phi_update_interval
 
         # INV-8: per-agent pending CE counter (reset between execute() calls if desired)
-        self._pending: Dict[str, int] = {}
+        self._pending: dict[str, int] = {}
 
         # Accumulated history for φ-fitting (persists across execute() calls)
-        self._g_history: List[Graph] = []
-        self._ce_history: List[CoordinationEvent] = []
+        self._g_history: list[Graph] = []
+        self._ce_history: list[CoordinationEvent] = []
         self._steps_since_phi_update: int = 0
 
     def reset_pending(self) -> None:
@@ -169,7 +169,7 @@ class Executor:
 
         tasks = self._planner.decompose(goal, G, A)
 
-        audit_ids: List[str] = []
+        audit_ids: list[str] = []
         resources_spent = 0.0
         tasks_attempted = 0
         tasks_succeeded = 0
@@ -182,12 +182,19 @@ class Executor:
             if task.depth > goal.max_depth:
                 logger.warning(
                     "Task %s (depth=%d) exceeds max_depth=%d; rejected",
-                    task.task_id, task.depth, goal.max_depth,
+                    task.task_id,
+                    task.depth,
+                    goal.max_depth,
                 )
                 aid = self._lux.audit(
-                    "execute_task", (task.initiating_agent,), False,
-                    details={"reason": "depth_exceeded", "depth": task.depth,
-                             "max_depth": goal.max_depth},
+                    "execute_task",
+                    (task.initiating_agent,),
+                    False,
+                    details={
+                        "reason": "depth_exceeded",
+                        "depth": task.depth,
+                        "max_depth": goal.max_depth,
+                    },
                 )
                 audit_ids.append(aid)
                 continue
@@ -197,12 +204,15 @@ class Executor:
             if current_pending >= MAX_PENDING_CES_PER_AGENT:
                 logger.warning(
                     "Agent %s pending=%d >= MAX_PENDING=%d; rejected",
-                    task.initiating_agent, current_pending, MAX_PENDING_CES_PER_AGENT,
+                    task.initiating_agent,
+                    current_pending,
+                    MAX_PENDING_CES_PER_AGENT,
                 )
                 aid = self._lux.audit(
-                    "execute_task", (task.initiating_agent,), False,
-                    details={"reason": "pending_quota_exceeded",
-                             "pending": current_pending},
+                    "execute_task",
+                    (task.initiating_agent,),
+                    False,
+                    details={"reason": "pending_quota_exceeded", "pending": current_pending},
                 )
                 audit_ids.append(aid)
                 continue
@@ -211,12 +221,14 @@ class Executor:
             execute_ce = CoordinationEvent(
                 event_type="execute_task",
                 participants=(task.initiating_agent,),
-                params=frozenset([
-                    ("task_id", task.task_id),
-                    ("capability", task.required_capability),
-                    ("resource_cost", task.resource_cost),
-                    ("resource", task.resource_type),
-                ]),
+                params=frozenset(
+                    [
+                        ("task_id", task.task_id),
+                        ("capability", task.required_capability),
+                        ("resource_cost", task.resource_cost),
+                        ("resource", task.resource_type),
+                    ]
+                ),
             )
 
             # ---- INV-6: authorize with resource pre-deduction ----
@@ -227,11 +239,15 @@ class Executor:
             if not auth.authorized:
                 # INV-7: audit failure before any state change
                 aid = self._lux.audit(
-                    "execute_task", execute_ce.participants, False,
+                    "execute_task",
+                    execute_ce.participants,
+                    False,
                     details={"reason": auth.reason},
                 )
                 audit_ids.append(aid)
-                self._pending[task.initiating_agent] = max(0, self._pending[task.initiating_agent] - 1)
+                self._pending[task.initiating_agent] = max(
+                    0, self._pending[task.initiating_agent] - 1
+                )
                 continue
 
             # ---- Execute via TaskRunner ----
@@ -246,11 +262,15 @@ class Executor:
                     )
                 # INV-7: audit exception
                 aid = self._lux.audit(
-                    "execute_task", execute_ce.participants, False,
+                    "execute_task",
+                    execute_ce.participants,
+                    False,
                     details={"reason": "task_runner_exception", "error": str(exc)},
                 )
                 audit_ids.append(aid)
-                self._pending[task.initiating_agent] = max(0, self._pending[task.initiating_agent] - 1)
+                self._pending[task.initiating_agent] = max(
+                    0, self._pending[task.initiating_agent] - 1
+                )
                 continue
 
             if not outcome.success:
@@ -261,11 +281,15 @@ class Executor:
                     )
                 # INV-7: audit task failure
                 aid = self._lux.audit(
-                    "execute_task", execute_ce.participants, False,
+                    "execute_task",
+                    execute_ce.participants,
+                    False,
                     details={"reason": "task_failed", "notes": outcome.notes},
                 )
                 audit_ids.append(aid)
-                self._pending[task.initiating_agent] = max(0, self._pending[task.initiating_agent] - 1)
+                self._pending[task.initiating_agent] = max(
+                    0, self._pending[task.initiating_agent] - 1
+                )
                 continue
 
             # ---- Task succeeded: commit outcome ----
@@ -275,7 +299,9 @@ class Executor:
 
             # INV-7: audit success AFTER state commit (state is consistent)
             aid = self._lux.audit(
-                "execute_task", execute_ce.participants, True,
+                "execute_task",
+                execute_ce.participants,
+                True,
                 details={
                     "task_id": task.task_id,
                     "capability": task.required_capability,
@@ -316,7 +342,7 @@ class Executor:
         phi: PhiMap,
         A: Authority,
         E_history: list,
-    ) -> Tuple[Graph, Authority, PhiMap, list]:
+    ) -> tuple[Graph, Authority, PhiMap, list]:
         """Reflect task outcome into graph, update errors and authority.
 
         INV-5: capability changes enter the graph ONLY via
@@ -343,7 +369,7 @@ class Executor:
         # Error computation uses execute_ce for φ-encoding (not update_ce)
         errors = error_computation(G, G_next, phi, execute_ce)
         A_next = authority_update(A, errors, eta=self._eta)
-        E_next = E_history + [errors]
+        E_next = [*E_history, errors]
 
         self._g_history.append(G_next)
         self._ce_history.append(execute_ce)

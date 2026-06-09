@@ -15,15 +15,15 @@ RealLuxBridge: thin adapter for actual Lux Python bindings.
 Design principle: the boundary between Emergo and Lux is this file.
 Nothing in Emergo may touch capabilities or ledgers except through this interface.
 """
+
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 import logging
 import threading
 import time
 import uuid
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, Set
 
 from emergo.types import Authority, CoordinationEvent, Graph
 
@@ -41,8 +41,8 @@ class AuthResult:
     authorized: bool
     reason: str
     capability_verified: bool  # True iff a named capability was checked and confirmed
-    resource_reserved: float   # amount pre-deducted from the agent's ledger (0 if none)
-    audit_id: Optional[str] = None
+    resource_reserved: float  # amount pre-deducted from the agent's ledger (0 if none)
+    audit_id: str | None = None
 
 
 class LuxBridge(ABC):
@@ -100,7 +100,7 @@ class LuxBridge(ABC):
         ce_type: str,
         agent_ids: tuple,
         success: bool,
-        details: Optional[dict] = None,
+        details: dict | None = None,
         resource_deducted: float = 0.0,
     ) -> str:
         """Write an immutable audit record.  Returns audit_id.
@@ -135,8 +135,8 @@ class SimulatedLuxBridge(LuxBridge):
 
     def __init__(self, initial_budget: float = 100.0) -> None:
         self._initial_budget = initial_budget
-        self._capabilities: Dict[str, Set[str]] = {}
-        self._ledger: Dict[str, Dict[str, float]] = {}
+        self._capabilities: dict[str, set[str]] = {}
+        self._ledger: dict[str, dict[str, float]] = {}
         self._audit_log: list = []
         self._lock = threading.Lock()
 
@@ -174,13 +174,19 @@ class SimulatedLuxBridge(LuxBridge):
             if balance < amount:
                 logger.debug(
                     "SimulatedLux: deduct DENIED %r %r %.3f (balance=%.3f)",
-                    agent_id, resource, amount, balance,
+                    agent_id,
+                    resource,
+                    amount,
+                    balance,
                 )
                 return False
             self._ledger[agent_id][resource] = balance - amount
             logger.debug(
                 "SimulatedLux: deducted %r %r %.3f (remaining=%.3f)",
-                agent_id, resource, amount, self._ledger[agent_id][resource],
+                agent_id,
+                resource,
+                amount,
+                self._ledger[agent_id][resource],
             )
             return True
 
@@ -190,9 +196,10 @@ class SimulatedLuxBridge(LuxBridge):
             self._ledger[agent_id][resource] += amount
         logger.debug("SimulatedLux: refunded %r %r %.3f", agent_id, resource, amount)
 
-    def get_resource_snapshot(self) -> Dict[str, Dict[str, float]]:
+    def get_resource_snapshot(self) -> dict[str, dict[str, float]]:
         """Return a deep copy of the current ledger state (for observability)."""
         import copy
+
         with self._lock:
             return copy.deepcopy(self._ledger)
 
@@ -203,7 +210,7 @@ class SimulatedLuxBridge(LuxBridge):
         ce_type: str,
         agent_ids: tuple,
         success: bool,
-        details: Optional[dict] = None,
+        details: dict | None = None,
         resource_deducted: float = 0.0,
     ) -> str:
         record_id = str(uuid.uuid4())
@@ -219,10 +226,14 @@ class SimulatedLuxBridge(LuxBridge):
         }
         with self._lock:
             import copy
+
             self._audit_log.append(copy.deepcopy(record))
         logger.debug(
             "SimulatedLux: audit %s ce_type=%r success=%s agents=%s",
-            record_id[:8], ce_type, success, agent_ids,
+            record_id[:8],
+            ce_type,
+            success,
+            agent_ids,
         )
         return record_id
 
@@ -232,6 +243,7 @@ class SimulatedLuxBridge(LuxBridge):
         Callers may freely mutate the returned dicts without affecting stored records.
         """
         import copy
+
         with self._lock:
             return copy.deepcopy(self._audit_log)
 
@@ -267,14 +279,13 @@ class SimulatedLuxBridge(LuxBridge):
         # --- All other types: participants must exist and meet authority threshold ---
         for agent_id in CE.participants:
             if agent_id not in G.agent_ids:
-                return AuthResult(
-                    False, f"Participant {agent_id!r} not in graph", False, 0.0
-                )
+                return AuthResult(False, f"Participant {agent_id!r} not in graph", False, 0.0)
             if A.get(agent_id) < min_authority:
                 return AuthResult(
                     False,
                     f"Agent {agent_id!r} authority {A.get(agent_id):.3f} < {min_authority}",
-                    False, 0.0,
+                    False,
+                    0.0,
                 )
 
         # --- CE-specific structural preconditions ---
@@ -288,7 +299,9 @@ class SimulatedLuxBridge(LuxBridge):
             if len(CE.participants) < 1:
                 return AuthResult(False, "update_capabilities requires 1 participant", False, 0.0)
             if params.get("capabilities") is None:
-                return AuthResult(False, "update_capabilities requires capabilities param", False, 0.0)
+                return AuthResult(
+                    False, "update_capabilities requires capabilities param", False, 0.0
+                )
 
         # --- Capability check (execute_task only) ---
         capability_verified = False
@@ -303,7 +316,8 @@ class SimulatedLuxBridge(LuxBridge):
                 return AuthResult(
                     False,
                     f"Agent {initiator!r} lacks capability {required_cap!r}",
-                    False, 0.0,
+                    False,
+                    0.0,
                 )
             capability_verified = True
 
@@ -317,7 +331,8 @@ class SimulatedLuxBridge(LuxBridge):
                 return AuthResult(
                     False,
                     f"Agent {initiator!r} insufficient {resource!r} balance (need {cost:.2f})",
-                    capability_verified, 0.0,
+                    capability_verified,
+                    0.0,
                 )
             resource_reserved = cost
 
@@ -338,7 +353,8 @@ class RealLuxBridge(LuxBridge):
         self._max_retries = max_retries
         self._retry_delay = retry_delay
         try:
-            import lux as _lux  # type: ignore
+            import lux as _lux
+
             self._lux = _lux
         except ImportError as exc:
             raise LuxError(
@@ -346,63 +362,78 @@ class RealLuxBridge(LuxBridge):
                 "Install the 'lux' package or use EMERGO_LUX_MODE=simulated."
             ) from exc
 
-    def _retry(self, fn, *args, **kwargs):
+    def _retry(self, fn: object, *args: object, **kwargs: object) -> object:
         """Call fn(*args, **kwargs) up to max_retries times; fail-closed on last failure."""
         last_exc: Exception = RuntimeError("no attempts made")
         for attempt in range(self._max_retries + 1):
             try:
-                return fn(*args, **kwargs)
+                return fn(*args, **kwargs)  # type: ignore[operator]
             except Exception as exc:
                 last_exc = exc
                 if attempt < self._max_retries:
-                    time.sleep(self._retry_delay * (2 ** attempt))
+                    time.sleep(self._retry_delay * (2**attempt))
         raise last_exc
 
-    def authorize_ce(self, CE, G, A, min_authority=0.1, reserve_resources=False) -> AuthResult:
+    def authorize_ce(
+        self,
+        CE: CoordinationEvent,
+        G: Graph,
+        A: Authority,
+        min_authority: float = 0.1,
+        reserve_resources: bool = False,
+    ) -> AuthResult:
         try:
-            return self._retry(self._lux.authorize_ce, CE, G, A, min_authority, reserve_resources)
+            return self._retry(self._lux.authorize_ce, CE, G, A, min_authority, reserve_resources)  # type: ignore[return-value]
         except Exception as exc:
             logger.warning("RealLuxBridge.authorize_ce failed (fail-closed): %s", exc)
             return AuthResult(False, f"Lux error: {exc}", False, 0.0)
 
-    def check_capability(self, agent_id, capability) -> bool:
+    def check_capability(self, agent_id: str, capability: str) -> bool:
         try:
             return bool(self._retry(self._lux.check_capability, agent_id, capability))
         except Exception:
             return False
 
-    def deduct_resource(self, agent_id, resource, amount) -> bool:
+    def deduct_resource(self, agent_id: str, resource: str, amount: float) -> bool:
         try:
             return bool(self._retry(self._lux.deduct_resource, agent_id, resource, amount))
         except Exception:
             return False
 
-    def refund_resource(self, agent_id, resource, amount) -> None:
+    def refund_resource(self, agent_id: str, resource: str, amount: float) -> None:
         try:
             self._lux.refund_resource(agent_id, resource, amount)
         except Exception as exc:
             logger.warning("RealLuxBridge.refund_resource failed (best-effort): %s", exc)
 
-    def grant_capability(self, agent_id, capability) -> None:
+    def grant_capability(self, agent_id: str, capability: str) -> None:
         try:
             self._lux.grant_capability(agent_id, capability)
         except Exception as exc:
             raise LuxError(f"grant_capability failed: {exc}") from exc
 
-    def audit(self, ce_type, agent_ids, success, details=None, resource_deducted=0.0) -> str:
+    def audit(
+        self,
+        ce_type: str,
+        agent_ids: tuple,
+        success: bool,
+        details: object = None,
+        resource_deducted: float = 0.0,
+    ) -> str:
         try:
             return str(self._lux.audit(ce_type, agent_ids, success, details, resource_deducted))
         except Exception as exc:
             raise LuxError(f"Audit write failed: {exc}") from exc
 
 
-def make_lux_bridge(mode: Optional[str] = None, **kwargs) -> LuxBridge:
+def make_lux_bridge(mode: str | None = None, **kwargs: object) -> LuxBridge:
     """Factory.  Respects EMERGO_LUX_MODE env var; kwargs forwarded to constructor."""
     from emergo.config import LUX_MODE
+
     effective_mode = mode or LUX_MODE
     if effective_mode == "real":
         return RealLuxBridge()
-    return SimulatedLuxBridge(**kwargs)
+    return SimulatedLuxBridge(**kwargs)  # type: ignore[arg-type]
 
 
 def validate_bridge(bridge: LuxBridge) -> bool:

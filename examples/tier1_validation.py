@@ -26,15 +26,15 @@ Usage:
     # Skip plots (useful in CI)
     python examples/tier1_validation.py --quick --no-plots
 """
+
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass, field
 import json
+from pathlib import Path
 import sys
 import time
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -50,47 +50,48 @@ from emergo import (
     make_initial_phi,
 )
 from emergo.diagnostics import topology_entropy
-from emergo.types import Authority, CoordinationEvent, PhiMap
-
+from emergo.types import CoordinationEvent, PhiMap
 
 # ---------------------------------------------------------------------------
 # Constants — Tier 1 safety specification thresholds
 # ---------------------------------------------------------------------------
 
-C_PHI          = 10.0    # I_2: Frobenius norm bound for W_phi
-DELTA_MIN      = 0.01    # INV-18: minimum singular value
-CAP_AUTHORITY  = 0.8     # INV-11: maximum authority concentration
-H_MIN          = 0.3     # INV-13: topology entropy lower bound
-EPS_MIN        = 1e-6    # INV-17: minimum phi adaptation per window
+C_PHI = 10.0  # I_2: Frobenius norm bound for W_phi
+DELTA_MIN = 0.01  # INV-18: minimum singular value
+CAP_AUTHORITY = 0.8  # INV-11: maximum authority concentration
+H_MIN = 0.3  # INV-13: topology entropy lower bound
+EPS_MIN = 1e-6  # INV-17: minimum phi adaptation per window
 # INV-16: ε_var = lr × grad_clip × n_steps × sqrt(d_latent × d_features)
 # Computed dynamically per batch using actual phi dimensions.
-PHI_LR         = 1e-3
-PHI_GRAD_CLIP  = 1.0
-PHI_N_STEPS    = 20
+PHI_LR = 1e-3
+PHI_GRAD_CLIP = 1.0
+PHI_N_STEPS = 20
 
 
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BatchRecord:
     """Aggregate statistics collected at the end of each kernel batch."""
+
     batch_idx: int
-    total_iters: int            # cumulative iterations so far
-    total_accepted: int         # cumulative accepted CEs so far
-    wall_time_s: float          # cumulative wall time
+    total_iters: int  # cumulative iterations so far
+    total_accepted: int  # cumulative accepted CEs so far
+    wall_time_s: float  # cumulative wall time
 
     # PhiMap invariants
     phi_rank: int
     phi_frob: float
-    phi_min_sv: float           # minimum singular value of W_phi
-    phi_frob_delta: float       # ||phi_end - phi_start||_F for this batch
+    phi_min_sv: float  # minimum singular value of W_phi
+    phi_frob_delta: float  # ||phi_end - phi_start||_F for this batch
 
     # Authority invariants
     max_authority: float
     min_authority: float
-    authority_scores: Dict[str, float]
+    authority_scores: dict[str, float]
 
     # Topology invariant
     topology_ent: float
@@ -98,8 +99,8 @@ class BatchRecord:
     # Per-batch kernel stats
     n_accepted_this_batch: int
     phi_updates_this_batch: int
-    min_phi_loss: Optional[float]
-    max_phi_loss: Optional[float]
+    min_phi_loss: float | None
+    max_phi_loss: float | None
 
     # INV violation flags (True = violation detected)
     inv11_violated: bool = False  # max_authority > 0.8
@@ -113,19 +114,20 @@ class BatchRecord:
 
 @dataclass
 class ValidationResult:
-    records: List[BatchRecord] = field(default_factory=list)
+    records: list[BatchRecord] = field(default_factory=list)
     terminated_early: bool = False
     termination_reason: str = ""
     total_iters: int = 0
     total_accepted: int = 0
     total_wall_time_s: float = 0.0
     all_invariants_held: bool = True
-    violation_summary: Dict[str, int] = field(default_factory=dict)
+    violation_summary: dict[str, int] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _ring_graph(n: int, seed: int = 0) -> Graph:
     """Sparse ring topology with small random weights."""
@@ -167,14 +169,16 @@ def _diverse_generator(G: Graph, rng_seed: int = 0) -> WeightedMixGenerator:
     add_gen = SequenceProposalGenerator(add_ces, loop=True)
     remove_gen = SequenceProposalGenerator(remove_ces, loop=True)
 
-    return WeightedMixGenerator([
-        (default_gen, 0.6),
-        (add_gen,     0.2),
-        (remove_gen,  0.2),
-    ])
+    return WeightedMixGenerator(
+        [
+            (default_gen, 0.6),
+            (add_gen, 0.2),
+            (remove_gen, 0.2),
+        ]
+    )
 
 
-def check_phi_safe(phi: PhiMap, C_phi: float = C_PHI, delta_min: float = DELTA_MIN) -> Dict:
+def check_phi_safe(phi: PhiMap, C_phi: float = C_PHI, delta_min: float = DELTA_MIN) -> dict:
     """Programmatic Φ_safe validator from SAFETY_SPEC.md §1.3."""
     rank = int(np.linalg.matrix_rank(phi.W_phi, tol=1e-6))
     row_norms = np.linalg.norm(phi.W_phi, axis=1)
@@ -182,23 +186,22 @@ def check_phi_safe(phi: PhiMap, C_phi: float = C_PHI, delta_min: float = DELTA_M
     svs = np.linalg.svd(phi.W_phi, compute_uv=False)
     min_sv = float(svs.min()) if len(svs) > 0 else 0.0
     return {
-        "rank":         rank,
-        "frob":         frob,
-        "min_sv":       min_sv,
-        "I_1_rank":     rank >= phi.d_latent // 2,
-        "I_2_frob":     frob <= C_phi,
-        "I_3_rows":     bool(np.all(row_norms > 1e-6)),
-        "I_4_acyclic":  True,
-        "phi_safe":     (rank >= phi.d_latent // 2) and (frob <= C_phi)
-                        and bool(np.all(row_norms > 1e-6)),
+        "rank": rank,
+        "frob": frob,
+        "min_sv": min_sv,
+        "I_1_rank": rank >= phi.d_latent // 2,
+        "I_2_frob": frob <= C_phi,
+        "I_3_rows": bool(np.all(row_norms > 1e-6)),
+        "I_4_acyclic": True,
+        "phi_safe": (rank >= phi.d_latent // 2)
+        and (frob <= C_phi)
+        and bool(np.all(row_norms > 1e-6)),
     }
 
 
 def _eps_var(phi: PhiMap, n_steps: int = PHI_N_STEPS) -> float:
     """INV-16 upper bound: lr × grad_clip × n_steps × sqrt(d_latent × d_features)."""
-    return PHI_LR * PHI_GRAD_CLIP * n_steps * float(
-        np.sqrt(phi.d_latent * phi.d_features)
-    )
+    return PHI_LR * PHI_GRAD_CLIP * n_steps * float(np.sqrt(phi.d_latent * phi.d_features))
 
 
 class _BatchObserver:
@@ -207,7 +210,7 @@ class _BatchObserver:
     def __init__(self) -> None:
         self.n_accepted: int = 0
         self.n_phi_updates: int = 0
-        self.phi_losses: List[float] = []
+        self.phi_losses: list[float] = []
 
     def on_iteration_start(self, t: int, state: object) -> None:
         pass
@@ -227,6 +230,7 @@ class _BatchObserver:
 # ---------------------------------------------------------------------------
 # Core benchmark loop
 # ---------------------------------------------------------------------------
+
 
 def run_tier1_validation(
     n_agents: int = 8,
@@ -251,7 +255,6 @@ def run_tier1_validation(
     G = _ring_graph(n_agents, seed=seed)
     phi = make_initial_phi(d_latent=8, d_features=16, d_ce=4, seed=seed)
     A = make_initial_authority(G.agent_ids, baseline=0.5)
-    E_history = []
 
     proposal_gen = _diverse_generator(G, rng_seed=seed)
 
@@ -260,9 +263,7 @@ def run_tier1_validation(
     cumulative_accepted = 0
     t_start = time.time()
 
-    violation_counts: Dict[str, int] = {
-        f"INV-{k}": 0 for k in [11, 12, 13, 14, 15, 16, 17, 18]
-    }
+    violation_counts: dict[str, int] = {f"INV-{k}": 0 for k in [11, 12, 13, 14, 15, 16, 17, 18]}
     violation_counts["NaN_Inf"] = 0
 
     # CSV log header
@@ -277,17 +278,23 @@ def run_tier1_validation(
 
     if verbose:
         print(f"\n{'='*70}")
-        print(f"  Emergo Tier 1 Long-Horizon Benchmark")
-        print(f"  Agents: {n_agents}  |  Batches: {n_batches}  |  "
-              f"Batch size: {batch_size:,}  |  Total: {n_batches * batch_size:,}")
+        print("  Emergo Tier 1 Long-Horizon Benchmark")
+        print(
+            f"  Agents: {n_agents}  |  Batches: {n_batches}  |  "
+            f"Batch size: {batch_size:,}  |  Total: {n_batches * batch_size:,}"
+        )
         print(f"  Output: {output_dir}")
         print(f"{'='*70}\n")
-        print(f"  {'Batch':>5}  {'Total iters':>12}  {'Accepted':>10}  "
-              f"{'Rank':>4}  {'Frob':>6}  {'MinSV':>7}  "
-              f"{'MaxAuth':>7}  {'H(G)':>6}  {'Violations':>10}")
-        print(f"  {'-'*5}  {'-'*12}  {'-'*10}  "
-              f"{'-'*4}  {'-'*6}  {'-'*7}  "
-              f"{'-'*7}  {'-'*6}  {'-'*10}")
+        print(
+            f"  {'Batch':>5}  {'Total iters':>12}  {'Accepted':>10}  "
+            f"{'Rank':>4}  {'Frob':>6}  {'MinSV':>7}  "
+            f"{'MaxAuth':>7}  {'H(G)':>6}  {'Violations':>10}"
+        )
+        print(
+            f"  {'-'*5}  {'-'*12}  {'-'*10}  "
+            f"{'-'*4}  {'-'*6}  {'-'*7}  "
+            f"{'-'*7}  {'-'*6}  {'-'*10}"
+        )
 
     for batch_idx in range(n_batches):
         obs = _BatchObserver()
@@ -297,7 +304,7 @@ def run_tier1_validation(
         state_in = (G, phi, A, [])
 
         try:
-            final_state, reason = emergo_kernel(
+            final_state, _reason = emergo_kernel(
                 initial_state=state_in,
                 max_iterations=batch_size,
                 convergence_threshold=1e-10,  # effectively never converge mid-batch
@@ -317,9 +324,7 @@ def run_tier1_validation(
 
         # --- Collect metrics ---
         phi_info = check_phi_safe(phi)
-        frob_delta = float(
-            np.linalg.norm(phi.W_phi - phi_prev.W_phi, "fro")
-        )
+        frob_delta = float(np.linalg.norm(phi.W_phi - phi_prev.W_phi, "fro"))
 
         max_auth = max(A.get(aid) for aid in G.agent_ids)
         min_auth = min(A.get(aid) for aid in G.agent_ids)
@@ -330,9 +335,9 @@ def run_tier1_validation(
 
         # --- NaN / Inf check ---
         nan_inf = bool(
-            np.any(~np.isfinite(phi.W_phi)) or
-            np.any(~np.isfinite(phi.W_F)) or
-            not np.isfinite(max_auth)
+            np.any(~np.isfinite(phi.W_phi))
+            or np.any(~np.isfinite(phi.W_F))
+            or not np.isfinite(max_auth)
         )
         if nan_inf:
             violation_counts["NaN_Inf"] += 1
@@ -452,14 +457,16 @@ def run_tier1_validation(
 # Plotting
 # ---------------------------------------------------------------------------
 
+
 def generate_plots(
-    records: List[BatchRecord],
+    records: list[BatchRecord],
     agent_ids: tuple,
     output_dir: Path,
     verbose: bool = True,
 ) -> None:
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
@@ -468,7 +475,7 @@ def generate_plots(
         return
 
     iters = [r.total_iters for r in records]
-    accepted = [r.total_accepted for r in records]
+    [r.total_accepted for r in records]
 
     # ---- 1. Authority trajectory -------------------------------------------
     fig, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
@@ -478,8 +485,13 @@ def generate_plots(
     for j, aid in enumerate(sorted(agent_ids)):
         vals = [r.authority_scores.get(aid, 0.5) for r in records]
         ax.plot(iters, vals, label=aid, linewidth=0.9, alpha=0.8, color=cmap(j))
-    ax.axhline(CAP_AUTHORITY, color="red", linestyle="--", linewidth=1.0,
-               label=f"INV-11 cap ({CAP_AUTHORITY})")
+    ax.axhline(
+        CAP_AUTHORITY,
+        color="red",
+        linestyle="--",
+        linewidth=1.0,
+        label=f"INV-11 cap ({CAP_AUTHORITY})",
+    )
     ax.set_ylabel("Authority score")
     ax.set_title("Per-Agent Authority Trajectory")
     ax.legend(fontsize=6, ncol=max(1, n_agents // 4), loc="lower right")
@@ -502,11 +514,12 @@ def generate_plots(
     # ---- 2. Topology entropy -----------------------------------------------
     fig, ax = plt.subplots(figsize=(12, 3))
     ax.plot(iters, [r.topology_ent for r in records], color="steelblue", linewidth=0.9)
-    ax.axhline(H_MIN, color="orange", linestyle="--", linewidth=1.0,
-               label=f"INV-13 H_min ({H_MIN})")
+    ax.axhline(
+        H_MIN, color="orange", linestyle="--", linewidth=1.0, label=f"INV-13 H_min ({H_MIN})"
+    )
     # Mark violations
     viol_iters = [r.total_iters for r in records if r.inv13_violated]
-    viol_vals  = [r.topology_ent for r in records if r.inv13_violated]
+    viol_vals = [r.topology_ent for r in records if r.inv13_violated]
     if viol_iters:
         ax.scatter(viol_iters, viol_vals, color="red", s=8, zorder=5, label="INV-13 violation")
     ax.set_xlabel("Total iterations")
@@ -527,19 +540,34 @@ def generate_plots(
     rank_min_required = d_latent // 2
 
     color1 = "tab:blue"
-    ax1.plot(iters, [r.phi_rank for r in records], color=color1, linewidth=0.9,
-             label="rank(W_phi)")
-    ax1.axhline(rank_min_required, color="red", linestyle="--", linewidth=0.8,
-                label=f"INV-14 min rank ({rank_min_required})")
+    ax1.plot(iters, [r.phi_rank for r in records], color=color1, linewidth=0.9, label="rank(W_phi)")
+    ax1.axhline(
+        rank_min_required,
+        color="red",
+        linestyle="--",
+        linewidth=0.8,
+        label=f"INV-14 min rank ({rank_min_required})",
+    )
     ax1.set_ylabel("rank(W_phi)", color=color1)
     ax1.tick_params(axis="y", labelcolor=color1)
 
     ax2 = ax1.twinx()
     color2 = "tab:green"
-    ax2.plot(iters, [r.phi_min_sv for r in records], color=color2, linewidth=0.9,
-             linestyle=":", label="min singular value")
-    ax2.axhline(DELTA_MIN, color="darkorange", linestyle="--", linewidth=0.8,
-                label=f"INV-18 δ_min ({DELTA_MIN})")
+    ax2.plot(
+        iters,
+        [r.phi_min_sv for r in records],
+        color=color2,
+        linewidth=0.9,
+        linestyle=":",
+        label="min singular value",
+    )
+    ax2.axhline(
+        DELTA_MIN,
+        color="darkorange",
+        linestyle="--",
+        linewidth=0.8,
+        label=f"INV-18 δ_min ({DELTA_MIN})",
+    )
     ax2.set_ylabel("min singular value", color=color2)
     ax2.tick_params(axis="y", labelcolor=color2)
 
@@ -592,6 +620,7 @@ def generate_plots(
 # Structured report emission
 # ---------------------------------------------------------------------------
 
+
 def emit_report(result: ValidationResult, n_agents: int, verbose: bool = True) -> None:
     """Emit the structured [TIER1_VALIDATION] block to stdout."""
     recs = result.records
@@ -599,7 +628,7 @@ def emit_report(result: ValidationResult, n_agents: int, verbose: bool = True) -
 
     # Compute aggregate invariant compliance rates
     n = len(recs)
-    compliance: Dict[str, float] = {}
+    compliance: dict[str, float] = {}
     if n > 0:
         compliance["INV-11"] = 1.0 - vs["INV-11"] / n
         compliance["INV-13"] = 1.0 - vs["INV-13"] / n
@@ -637,10 +666,10 @@ def emit_report(result: ValidationResult, n_agents: int, verbose: bool = True) -
             "topology_entropy": round(final.topology_ent, 6) if final else None,
         },
         "phi_safe_at_end": (
-            final is not None and
-            not final.inv14_violated and
-            not final.inv18_violated and
-            final.phi_frob <= C_PHI
+            final is not None
+            and not final.inv14_violated
+            and not final.inv18_violated
+            and final.phi_frob <= C_PHI
         ),
     }
 
@@ -655,13 +684,25 @@ def emit_report(result: ValidationResult, n_agents: int, verbose: bool = True) -
         # Human-readable summary
         print("\nInvariant Status (PASS = 0 violations):")
         inv_map = {
-            "INV-11": ("Authority monopolization", vs["INV-11"], "cap at 0.8 (gap: kernel clips at 1.0)"),
-            "INV-13": ("Topology entropy > 0.3",   vs["INV-13"], "enforced by topology_lock_in detector"),
-            "INV-14": ("Rank preservation",         vs["INV-14"], "enforced by nuclear-norm regularization"),
-            "INV-16": ("Bounded phi variation",     vs["INV-16"], "enforced by gradient clipping"),
-            "INV-17": ("Persistent adaptation",     vs["INV-17"], "phi_update runs every 10 steps"),
-            "INV-18": ("Safety margin (min_sv)",    vs["INV-18"], "enforced by rank regularization"),
-            "NaN/Inf": ("Numerical stability",      vs["NaN_Inf"], "all IEEE-754 finite"),
+            "INV-11": (
+                "Authority monopolization",
+                vs["INV-11"],
+                "cap at 0.8 (gap: kernel clips at 1.0)",
+            ),
+            "INV-13": (
+                "Topology entropy > 0.3",
+                vs["INV-13"],
+                "enforced by topology_lock_in detector",
+            ),
+            "INV-14": (
+                "Rank preservation",
+                vs["INV-14"],
+                "enforced by nuclear-norm regularization",
+            ),
+            "INV-16": ("Bounded phi variation", vs["INV-16"], "enforced by gradient clipping"),
+            "INV-17": ("Persistent adaptation", vs["INV-17"], "phi_update runs every 10 steps"),
+            "INV-18": ("Safety margin (min_sv)", vs["INV-18"], "enforced by rank regularization"),
+            "NaN/Inf": ("Numerical stability", vs["NaN_Inf"], "all IEEE-754 finite"),
         }
         for key, (desc, cnt, note) in inv_map.items():
             status = "PASS" if cnt == 0 else "FAIL"
@@ -670,11 +711,15 @@ def emit_report(result: ValidationResult, n_agents: int, verbose: bool = True) -
             if cnt > 0:
                 print(f"           note: {note}")
 
-        print(f"\n  Hard invariants (INV-14, INV-18, NaN/Inf): "
-              f"{'ALL HELD' if result.all_invariants_held else 'VIOLATED — see above'}")
-        print(f"  Total: {result.total_iters:,} iterations, "
-              f"{result.total_accepted:,} accepted CEs, "
-              f"{result.total_wall_time_s:.1f}s wall time")
+        print(
+            f"\n  Hard invariants (INV-14, INV-18, NaN/Inf): "
+            f"{'ALL HELD' if result.all_invariants_held else 'VIOLATED — see above'}"
+        )
+        print(
+            f"  Total: {result.total_iters:,} iterations, "
+            f"{result.total_accepted:,} accepted CEs, "
+            f"{result.total_wall_time_s:.1f}s wall time"
+        )
         if n > 0:
             ce_rate = result.total_accepted / result.total_iters
             print(f"  CE acceptance rate: {ce_rate:.1%}")
@@ -687,41 +732,55 @@ def emit_report(result: ValidationResult, n_agents: int, verbose: bool = True) -
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Emergo Tier 1 Long-Horizon Benchmark Harness",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--batches", type=int, default=200,
+        "--batches",
+        type=int,
+        default=200,
         help="Number of kernel batches (default 200 → 1M iterations with --batch-size 5000)",
     )
     parser.add_argument(
-        "--batch-size", type=int, default=5_000,
+        "--batch-size",
+        type=int,
+        default=5_000,
         help="Iterations per kernel batch (default 5000; reset E_history each batch)",
     )
     parser.add_argument(
-        "--agents", type=int, default=8,
+        "--agents",
+        type=int,
+        default=8,
         help="Number of agents (default 8)",
     )
     parser.add_argument(
-        "--seed", type=int, default=42,
+        "--seed",
+        type=int,
+        default=42,
         help="Master random seed",
     )
     parser.add_argument(
-        "--output-dir", type=str, default="examples/tier1_results",
+        "--output-dir",
+        type=str,
+        default="examples/tier1_results",
         help="Directory for log and plots (default examples/tier1_results/)",
     )
     parser.add_argument(
-        "--no-plots", action="store_true",
+        "--no-plots",
+        action="store_true",
         help="Skip matplotlib plots",
     )
     parser.add_argument(
-        "--quick", action="store_true",
+        "--quick",
+        action="store_true",
         help="Quick smoke test: 4 batches × 500 iterations = 2 000 total",
     )
     parser.add_argument(
-        "--quiet", action="store_true",
+        "--quiet",
+        action="store_true",
         help="Suppress per-batch console output",
     )
     args = parser.parse_args()
@@ -733,7 +792,7 @@ def main() -> int:
     output_dir = Path(args.output_dir)
     verbose = not args.quiet
 
-    result, G_final, phi_final, A_final = run_tier1_validation(
+    result, G_final, _phi_final, _A_final = run_tier1_validation(
         n_agents=args.agents,
         batch_size=args.batch_size,
         n_batches=args.batches,

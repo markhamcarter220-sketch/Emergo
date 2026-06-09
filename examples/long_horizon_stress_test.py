@@ -17,12 +17,13 @@ Two experiments:
 Usage:
     python examples/long_horizon_stress_test.py [--no-plots] [--seed N]
 """
+
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import sys
 import time
-from pathlib import Path
 
 import numpy as np
 
@@ -40,10 +41,10 @@ from emergo import (
 )
 from emergo.types import CoordinationEvent
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _random_graph(n: int, density: float = 0.4, seed: int = 0) -> Graph:
     rng = np.random.default_rng(seed)
@@ -67,6 +68,7 @@ def _make_ce(event_type: str, participants: tuple, **params) -> CoordinationEven
 
 class NullProposalGenerator:
     """A generator that always returns None (no CE proposed)."""
+
     def propose(self, A_t, G_t, rng):
         return None
 
@@ -74,6 +76,7 @@ class NullProposalGenerator:
 # ---------------------------------------------------------------------------
 # Experiment 1: 10k-iteration run on 10-agent graph
 # ---------------------------------------------------------------------------
+
 
 def run_10k_stress(seed: int, output_dir: Path, make_plots: bool) -> None:
     print("=" * 60)
@@ -87,28 +90,29 @@ def run_10k_stress(seed: int, output_dir: Path, make_plots: bool) -> None:
     initial_state = (G, phi, A, [])
 
     # Diverse proposal mix: 30% add_edge, 20% remove_edge, 30% update_caps, 20% null
-    default_gen = DefaultProposalGenerator()
+    DefaultProposalGenerator()
 
     # Structured sub-generators
     ids = G.agent_ids
-    add_ces = [_make_ce("add_edge", (ids[i], ids[(i + 3) % n]), weight=0.5 + 0.01 * i)
-               for i in range(n)]
-    remove_ces = [_make_ce("remove_edge", (ids[i], ids[(i + 2) % n]))
-                  for i in range(n)]
-    cap_ces = [_make_ce("update_capabilities", (ids[i],), cap_index=0, value=0.7)
-               for i in range(n)]
+    add_ces = [
+        _make_ce("add_edge", (ids[i], ids[(i + 3) % n]), weight=0.5 + 0.01 * i) for i in range(n)
+    ]
+    remove_ces = [_make_ce("remove_edge", (ids[i], ids[(i + 2) % n])) for i in range(n)]
+    cap_ces = [_make_ce("update_capabilities", (ids[i],), cap_index=0, value=0.7) for i in range(n)]
 
     add_gen = SequenceProposalGenerator(add_ces, loop=True)
     remove_gen = SequenceProposalGenerator(remove_ces, loop=True)
     cap_gen = SequenceProposalGenerator(cap_ces, loop=True)
     null_gen = NullProposalGenerator()
 
-    diverse_gen = WeightedMixGenerator([
-        (add_gen, 0.30),
-        (remove_gen, 0.20),
-        (cap_gen, 0.30),
-        (null_gen, 0.20),
-    ])
+    diverse_gen = WeightedMixGenerator(
+        [
+            (add_gen, 0.30),
+            (remove_gen, 0.20),
+            (cap_gen, 0.30),
+            (null_gen, 0.20),
+        ]
+    )
 
     obs = HistoryObserver()
     t0 = time.time()
@@ -125,15 +129,17 @@ def run_10k_stress(seed: int, output_dir: Path, make_plots: bool) -> None:
     )
     elapsed = time.time() - t0
 
-    _, phi_final, A_final, E_history = final_state
+    _, _phi_final, A_final, _E_history = final_state
 
     print(f"  Termination    : {reason}")
     print(f"  Wall-time      : {elapsed:.1f}s")
     print(f"  CE observed    : {len(obs._ce_history)}")
     print(f"  CE acceptance  : {obs.ce_acceptance_rate:.1%}")
     if obs.phi_losses:
-        losses = [l for _, l in obs.phi_losses]
-        print(f"  phi_loss: first={losses[0]:.6f}  mid={losses[len(losses)//2]:.6f}  last={losses[-1]:.6f}")
+        losses = [loss for _, loss in obs.phi_losses]
+        print(
+            f"  phi_loss: first={losses[0]:.6f}  mid={losses[len(losses)//2]:.6f}  last={losses[-1]:.6f}"
+        )
     print()
 
     # Write convergence log
@@ -166,6 +172,7 @@ def _write_convergence_log(path: Path, diag, A_final, agent_ids) -> None:
 def _make_plots(diag, agent_ids, obs, output_dir: Path) -> None:
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
@@ -185,8 +192,13 @@ def _make_plots(diag, agent_ids, obs, output_dir: Path) -> None:
 
     fig, ax = plt.subplots(figsize=(10, 4))
     for aid in agent_ids:
-        ax.plot(iters[:len(auth_over_time[aid])], auth_over_time[aid],
-                label=aid, alpha=0.7, linewidth=0.8)
+        ax.plot(
+            iters[: len(auth_over_time[aid])],
+            auth_over_time[aid],
+            label=aid,
+            alpha=0.7,
+            linewidth=0.8,
+        )
     ax.set_xlabel("Iteration")
     ax.set_ylabel("Authority")
     ax.set_title("Authority History — 10-agent / 10k iterations")
@@ -231,19 +243,18 @@ def _make_plots(diag, agent_ids, obs, output_dir: Path) -> None:
 # Experiment 2: Adversarial add/remove agent test (100 agents)
 # ---------------------------------------------------------------------------
 
+
 def run_adversarial_agent_churn(seed: int) -> None:
     print("=" * 60)
     print("Experiment 2: Adversarial add/remove-agent stress (100 agents)")
     print("=" * 60)
 
-    import importlib
     from emergo.ce_execution import ce_execute
-    from emergo.error_computation import error_computation
     from emergo.features import extract_graph_features
     from emergo.kernel import make_initial_phi
     from emergo.lux import Lux
 
-    rng = np.random.default_rng(seed)
+    np.random.default_rng(seed)
     n_base = 10
     G = _random_graph(n_base, density=0.3, seed=seed)
     phi = make_initial_phi(d_latent=8, d_features=16, d_ce=4, seed=seed)
@@ -272,6 +283,7 @@ def run_adversarial_agent_churn(seed: int) -> None:
                 A_scores = {aid: A.get(aid) for aid in A.scores}
                 A_scores[new_id] = A.baseline
                 from emergo.types import Authority
+
                 A = Authority(scores=A_scores, baseline=A.baseline)
                 added_agents.append(new_id)
                 n_add += 1
@@ -288,6 +300,7 @@ def run_adversarial_agent_churn(seed: int) -> None:
                     G = G_next
                     A_scores = {aid: A.get(aid) for aid in A.scores if aid != agent_to_remove}
                     from emergo.types import Authority
+
                     A = Authority(scores=A_scores, baseline=A.baseline)
                     n_remove += 1
 
@@ -317,6 +330,7 @@ def run_adversarial_agent_churn(seed: int) -> None:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Emergo long-horizon stress test")

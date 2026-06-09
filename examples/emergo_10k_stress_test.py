@@ -20,14 +20,14 @@ Outputs (examples/emergo_10k_results/):
 Run:
     python examples/emergo_10k_stress_test.py [--seed N] [--no-plots]
 """
+
 from __future__ import annotations
 
 import argparse
 import logging
+from pathlib import Path
 import sys
 import time
-from pathlib import Path
-from typing import Optional
 
 import numpy as np
 
@@ -51,6 +51,7 @@ _OUTPUT_DIR = Path(__file__).parent / "emergo_10k_results"
 # Diverse CE proposal generator
 # ---------------------------------------------------------------------------
 
+
 class DiverseProposalGenerator:
     """Stateful proposal generator.
 
@@ -73,7 +74,7 @@ class DiverseProposalGenerator:
         p_update_caps: float = 0.20,
         min_edges_for_remove: int = 15,
         max_agents: int = 20,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> None:
         self._thresholds = (
             p_add_edge,
@@ -90,9 +91,7 @@ class DiverseProposalGenerator:
         self.n_update_caps = 0
         self.n_add_agent = 0
 
-    def propose(
-        self, A_t, G_t: Graph, rng: np.random.Generator
-    ) -> Optional[CoordinationEvent]:
+    def propose(self, A_t, G_t: Graph, rng: np.random.Generator) -> CoordinationEvent | None:
         n = G_t.n_agents
         if n < 2:
             return None
@@ -140,7 +139,7 @@ class DiverseProposalGenerator:
             params=frozenset([("weight", weight)]),
         )
 
-    def _remove_edge(self, G: Graph, rng: np.random.Generator) -> Optional[CoordinationEvent]:
+    def _remove_edge(self, G: Graph, rng: np.random.Generator) -> CoordinationEvent | None:
         rows, cols = np.where(G.adjacency > 0)
         if len(rows) == 0:
             return None
@@ -163,7 +162,7 @@ class DiverseProposalGenerator:
             params=frozenset([("capabilities", new_caps)]),
         )
 
-    def _add_agent(self, G: Graph) -> Optional[CoordinationEvent]:
+    def _add_agent(self, G: Graph) -> CoordinationEvent | None:
         if G.n_agents >= self._max_agents:
             return None  # cap: prevents unbounded eigvalsh cost over long horizon
         self._agent_counter += 1
@@ -178,7 +177,10 @@ class DiverseProposalGenerator:
         total = self.n_add_edge + self.n_remove_edge + self.n_update_caps + self.n_add_agent
         if total == 0:
             return "(no proposals generated)"
-        pct = lambda n: f"{100 * n / total:.1f}%"
+
+        def pct(n):
+            return f"{100 * n / total:.1f}%"
+
         return (
             f"add_edge={pct(self.n_add_edge)} "
             f"remove_edge={pct(self.n_remove_edge)} "
@@ -192,6 +194,7 @@ class DiverseProposalGenerator:
 # Progress observer (prints every 1000 iterations)
 # ---------------------------------------------------------------------------
 
+
 class ProgressObserver:
     def __init__(self) -> None:
         self._t0 = time.time()
@@ -201,7 +204,7 @@ class ProgressObserver:
         milestone = iteration // 1000
         if milestone != self._last_milestone and iteration > 0:
             elapsed = time.time() - self._t0
-            G, phi, A, E = state
+            G, _phi, _A, _E = state
             edge_count = int(np.count_nonzero(G.adjacency))
             print(
                 f"  iter {iteration:5d} | {elapsed:6.1f}s | "
@@ -223,12 +226,13 @@ class ProgressObserver:
 # Initial state construction
 # ---------------------------------------------------------------------------
 
+
 def build_initial_state(seed: int = 42):
     rng = np.random.default_rng(seed)
     n = 10
     agent_ids = tuple(f"agent_{i}" for i in range(n))
     adjacency = np.ones((n, n), dtype=float) - np.eye(n)  # fully connected, no self-loops
-    capabilities = rng.uniform(0, 0.5, (n, 4)) + 0.25    # [0.25, 0.75]
+    capabilities = rng.uniform(0, 0.5, (n, 4)) + 0.25  # [0.25, 0.75]
     G0 = Graph(agent_ids=agent_ids, adjacency=adjacency, capabilities=capabilities)
     phi0 = make_initial_phi(d_latent=8, d_features=16, d_ce=4, seed=seed)
     A0 = make_initial_authority(agent_ids, baseline=0.5)
@@ -239,14 +243,17 @@ def build_initial_state(seed: int = 42):
 # Main run
 # ---------------------------------------------------------------------------
 
+
 def run_stress_test(seed: int = 42) -> dict:
     G0, phi0, A0, E0 = build_initial_state(seed=seed)
     initial_state = (G0, phi0, A0, E0)
     init_edges = int(np.count_nonzero(G0.adjacency))
 
     print(f"  Initial graph  : {G0.n_agents} agents, {init_edges} edges")
-    print(f"  phi dims       : d_latent={phi0.d_latent} d_features={phi0.d_features} d_ce={phi0.d_ce}")
-    print(f"  Starting 10,000-iteration run …\n")
+    print(
+        f"  phi dims       : d_latent={phi0.d_latent} d_features={phi0.d_features} d_ce={phi0.d_ce}"
+    )
+    print("  Starting 10,000-iteration run …\n")
 
     proposal_gen = DiverseProposalGenerator()
     progress_obs = ProgressObserver()
@@ -257,7 +264,7 @@ def run_stress_test(seed: int = 42) -> dict:
     result = emergo_kernel(
         initial_state=initial_state,
         max_iterations=10_000,
-        convergence_threshold=0.0,   # disabled: run all 10k iterations
+        convergence_threshold=0.0,  # disabled: run all 10k iterations
         collect_diagnostics=True,
         proposal_generator=proposal_gen,
         observers=[progress_obs, history_obs],
@@ -269,7 +276,7 @@ def run_stress_test(seed: int = 42) -> dict:
 
     elapsed = time.time() - t_start
     final_state, reason, diag = result
-    G_final, phi_final, A_final, E_final = final_state
+    G_final, _phi_final, A_final, _E_final = final_state
 
     return {
         "G_initial": G0,
@@ -287,6 +294,7 @@ def run_stress_test(seed: int = 42) -> dict:
 # ---------------------------------------------------------------------------
 # Analysis
 # ---------------------------------------------------------------------------
+
 
 def analyze(results: dict) -> dict:
     diag = results["diag"]
@@ -334,9 +342,11 @@ def analyze(results: dict) -> dict:
 # Plots
 # ---------------------------------------------------------------------------
 
+
 def make_plots(results: dict, series: dict, output_dir: Path) -> None:
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
@@ -347,7 +357,7 @@ def make_plots(results: dict, series: dict, output_dir: Path) -> None:
     reason = results["reason"]
 
     # Annotate convergence point
-    convergence_iter: Optional[int] = None
+    convergence_iter: int | None = None
     if reason == "Converged" and diag.records:
         convergence_iter = diag.records[-1].iteration
 
@@ -361,7 +371,10 @@ def make_plots(results: dict, series: dict, output_dir: Path) -> None:
         ax.semilogy(phi_iters, safe_vals, color="steelblue", linewidth=0.9, label="φ loss")
         if convergence_iter is not None:
             ax.axvline(
-                convergence_iter, color="red", linestyle="--", alpha=0.8,
+                convergence_iter,
+                color="red",
+                linestyle="--",
+                alpha=0.8,
                 label=f"Converged @ iter {convergence_iter}",
             )
         ax.set_xlabel("Iteration")
@@ -419,8 +432,11 @@ def make_plots(results: dict, series: dict, output_dir: Path) -> None:
     if edge_counts:
         fig, ax = plt.subplots(figsize=(12, 3))
         ax.plot(
-            iters_accepted, edge_counts,
-            color="darkorange", linewidth=0.7, alpha=0.85,
+            iters_accepted,
+            edge_counts,
+            color="darkorange",
+            linewidth=0.7,
+            alpha=0.85,
         )
         ax.set_xlabel("Iteration")
         ax.set_ylabel("Edge Count")
@@ -437,6 +453,7 @@ def make_plots(results: dict, series: dict, output_dir: Path) -> None:
 # Summary log
 # ---------------------------------------------------------------------------
 
+
 def write_log(results: dict, series: dict, output_dir: Path) -> Path:
     G_init = results["G_initial"]
     G_final = results["G_final"]
@@ -447,7 +464,7 @@ def write_log(results: dict, series: dict, output_dir: Path) -> Path:
     proposal_gen = results["proposal_gen"]
 
     phi_vals = series["phi_vals"]
-    phi_iters = series["phi_iters"]
+    series["phi_iters"]
     edge_counts = series["edge_counts"]
     nan_phi = series["nan_phi"]
     auth_oob = series["auth_oob"]
@@ -473,9 +490,7 @@ def write_log(results: dict, series: dict, output_dir: Path) -> Path:
     accepted_count = sum(1 for r in records if r.ce_accepted)
     acceptance_rate = accepted_count / total_count if total_count else 0.0
 
-    convergence_iter = (
-        records[-1].iteration if reason == "Converged" and records else "N/A"
-    )
+    convergence_iter = records[-1].iteration if reason == "Converged" and records else "N/A"
 
     # Build log lines
     lines: list[str] = [
@@ -485,8 +500,11 @@ def write_log(results: dict, series: dict, output_dir: Path) -> Path:
         "Initial state:",
         f"  - Agents: {G_init.n_agents}",
         f"  - Initial edges: {init_edges} (fully connected)",
-        f"  - Initial phi_loss: {initial_phi:.6f}" if np.isfinite(initial_phi)
-            else "  - Initial phi_loss: N/A (no phi update before first record)",
+        (
+            f"  - Initial phi_loss: {initial_phi:.6f}"
+            if np.isfinite(initial_phi)
+            else "  - Initial phi_loss: N/A (no phi update before first record)"
+        ),
         "",
         "Execution:",
         f"  - Total iterations attempted: {total_count}",
@@ -529,13 +547,12 @@ def write_log(results: dict, series: dict, output_dir: Path) -> Path:
         f"  - Runtime: {elapsed:.2f}s",
         "",
         "Health check:",
-        f"  - NaN/Inf in phi_loss: "
+        "  - NaN/Inf in phi_loss: "
         + ("YES — at iterations " + str([i for i, _ in nan_phi[:5]]) if nan_phi else "NO"),
-        f"  - Authority scores out of [0,1]: "
+        "  - Authority scores out of [0,1]: "
         + ("YES — " + str(auth_oob[:3]) if auth_oob else "NO"),
-        f"  - Edge count negative: "
-        + ("YES — " + str(neg_edges[:3]) if neg_edges else "NO"),
-        f"  - Exceptions during run: 0 (kernel completed normally)",
+        "  - Edge count negative: " + ("YES — " + str(neg_edges[:3]) if neg_edges else "NO"),
+        "  - Exceptions during run: 0 (kernel completed normally)",
         "",
         "Observations:",
     ]
@@ -544,13 +561,10 @@ def write_log(results: dict, series: dict, output_dir: Path) -> Path:
     MIN_AUTH = 0.1
     final_auth_vals = list(final_auth.values())
     n_collapsed = sum(1 for v in final_auth_vals if v <= MIN_AUTH + 0.01)
-    authority_collapsed = (
-        len(final_auth_vals) > 0
-        and n_collapsed / len(final_auth_vals) > 0.8
-    )
+    authority_collapsed = len(final_auth_vals) > 0 and n_collapsed / len(final_auth_vals) > 0.8
 
     # Find the iteration where most authority first dropped below 0.2
-    collapse_iter: Optional[int] = None
+    collapse_iter: int | None = None
     if authority_collapsed:
         for r in records:
             if r.ce_accepted and r.authority_scores:
@@ -581,22 +595,22 @@ def write_log(results: dict, series: dict, output_dir: Path) -> Path:
 
     if authority_collapsed:
         diag_lines += [
-            f"  [AUTHORITY COLLAPSE DETECTED]",
+            "  [AUTHORITY COLLAPSE DETECTED]",
             f"  {n_collapsed}/{len(final_auth_vals)} agents have authority ≤ {MIN_AUTH + 0.01:.2f} "
             f"(floor = {MIN_AUTH}).",
         ]
         if collapse_iter is not None:
             diag_lines.append(f"  Collapse onset: ~iteration {collapse_iter}.")
         diag_lines += [
-            f"  Root cause: two-participant CEs (add_edge, remove_edge) on a fully-connected",
-            f"  graph create a systematic imbalance.  At initialization phi ≈ 0, so",
-            f"  global_phi_error ≈ 0.  The non-proposing participant's LOCAL adjacency-delta",
-            f"  error (≈ edge_weight ≈ 0.3–0.9) dominates max_error, giving that participant",
-            f"  correctness = 0, causing authority to decrease every accepted CE.",
-            f"  Proposers gain +η authority; participants lose −η authority.  Eventually all",
+            "  Root cause: two-participant CEs (add_edge, remove_edge) on a fully-connected",
+            "  graph create a systematic imbalance.  At initialization phi ≈ 0, so",
+            "  global_phi_error ≈ 0.  The non-proposing participant's LOCAL adjacency-delta",
+            "  error (≈ edge_weight ≈ 0.3–0.9) dominates max_error, giving that participant",
+            "  correctness = 0, causing authority to decrease every accepted CE.",
+            "  Proposers gain +η authority; participants lose −η authority.  Eventually all",
             f"  agents hit the Lux floor ({MIN_AUTH}) and new CEs are rejected (7.3% rate).",
-            f"  Mitigation: reduce convergence_threshold, use single-participant CEs, or",
-            f"  warm-start phi with a higher scale so global_error > local_error initially.",
+            "  Mitigation: reduce convergence_threshold, use single-participant CEs, or",
+            "  warm-start phi with a higher scale so global_error > local_error initially.",
         ]
     else:
         diag_lines.append(
@@ -668,6 +682,7 @@ def write_log(results: dict, series: dict, output_dir: Path) -> Path:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Emergo 10k iteration stress test")

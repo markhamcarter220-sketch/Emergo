@@ -1,11 +1,8 @@
 """Large-scale stress tests: 50-100 agents, varied topologies, failure injection."""
+
 from __future__ import annotations
 
-import time
-from typing import Optional
-
 import numpy as np
-import pytest
 
 from emergo import (
     CoordinationEvent,
@@ -15,12 +12,11 @@ from emergo import (
     make_initial_phi,
 )
 from emergo.proposal import DefaultProposalGenerator, SequenceProposalGenerator
-from emergo.types import Authority
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 def _random_graph(n, density=0.3, seed=0):
     rng = np.random.default_rng(seed)
@@ -56,6 +52,7 @@ def _make_state(G: Graph, seed: int = 0):
 # Class 1: Large-scale convergence
 # ---------------------------------------------------------------------------
 
+
 class TestLargeScaleConvergence:
 
     def test_50_agent_ring_convergence(self):
@@ -85,7 +82,7 @@ class TestLargeScaleConvergence:
         G = _random_graph(n, density=0.05, seed=2)
         state = _make_state(G, seed=2)
 
-        final_state, reason = emergo_kernel(
+        final_state, _reason = emergo_kernel(
             state,
             max_iterations=300,
             rng=np.random.default_rng(2),
@@ -102,7 +99,7 @@ class TestLargeScaleConvergence:
         G = _random_graph(n, density=0.8, seed=3)
         state = _make_state(G, seed=3)
 
-        final_state, reason = emergo_kernel(
+        final_state, _reason = emergo_kernel(
             state,
             max_iterations=300,
             rng=np.random.default_rng(3),
@@ -136,6 +133,7 @@ class TestLargeScaleConvergence:
 # Class 2: Varied topologies
 # ---------------------------------------------------------------------------
 
+
 class TestVariedTopologies:
 
     def test_ring_topology(self):
@@ -149,6 +147,7 @@ class TestVariedTopologies:
         state = _make_state(G, seed=10)
 
         from emergo import HistoryObserver
+
         obs = HistoryObserver()
         emergo_kernel(
             state,
@@ -172,7 +171,7 @@ class TestVariedTopologies:
         G = Graph(agent_ids=tuple(f"a{i}" for i in range(n)), adjacency=adj, capabilities=caps)
         state = _make_state(G, seed=11)
 
-        final_state, reason = emergo_kernel(
+        final_state, _reason = emergo_kernel(
             state,
             max_iterations=300,
             rng=np.random.default_rng(11),
@@ -193,7 +192,7 @@ class TestVariedTopologies:
         G = Graph(agent_ids=tuple(f"a{i}" for i in range(n)), adjacency=adj, capabilities=caps)
         state = _make_state(G, seed=12)
 
-        final_state, reason = emergo_kernel(
+        final_state, _reason = emergo_kernel(
             state,
             max_iterations=300,
             rng=np.random.default_rng(12),
@@ -218,7 +217,7 @@ class TestVariedTopologies:
         G = Graph(agent_ids=tuple(f"a{i}" for i in range(n)), adjacency=adj, capabilities=caps)
         state = _make_state(G, seed=13)
 
-        final_state, reason = emergo_kernel(
+        final_state, _reason = emergo_kernel(
             state,
             max_iterations=400,
             rng=np.random.default_rng(13),
@@ -241,8 +240,9 @@ class TestVariedTopologies:
             CoordinationEvent(
                 event_type="add_agent",
                 participants=(f"a{n + k}",),
-                params=frozenset([("agent_id", f"a{n + k}"),
-                                   ("capabilities", (0.5, 0.5, 0.5, 0.5))]),
+                params=frozenset(
+                    [("agent_id", f"a{n + k}"), ("capabilities", (0.5, 0.5, 0.5, 0.5))]
+                ),
             )
             for k in range(5)
         ]
@@ -267,7 +267,7 @@ class TestVariedTopologies:
             proposal_generator=_MixGen(),
         )
         assert reason in {"Converged", "Max iterations reached"}
-        G_final, phi, A_final, _ = final_state
+        G_final, _phi, A_final, _ = final_state
         assert G_final.n_agents >= n, "Final graph has fewer agents than initial"
         for aid in G_final.agent_ids:
             v = A_final.get(aid)
@@ -277,6 +277,7 @@ class TestVariedTopologies:
 # ---------------------------------------------------------------------------
 # Class 3: Failure injection
 # ---------------------------------------------------------------------------
+
 
 class TestFailureInjection:
 
@@ -293,7 +294,7 @@ class TestFailureInjection:
             rng=np.random.default_rng(20),
         )
         assert reason in {"Converged", "Max iterations reached"}
-        _, phi, A, _ = final_state
+        _, phi, _A, _ = final_state
         assert np.all(np.isfinite(phi.W_phi)), "W_phi contains NaN/Inf under noisy lr"
         assert np.all(np.isfinite(phi.W_F)), "W_F contains NaN/Inf under noisy lr"
 
@@ -344,7 +345,7 @@ class TestFailureInjection:
             proposal_generator=seq_gen,
         )
         assert reason in {"Converged", "Max iterations reached"}
-        _, phi, A, _ = final_state
+        _, _phi, A, _ = final_state
         for aid in G.agent_ids:
             v = A.get(aid)
             assert 0.0 <= v <= 1.0, f"Authority out of bounds for {aid}: {v}"
@@ -372,7 +373,7 @@ class TestFailureInjection:
             proposal_generator=_SameGen(),
         )
         assert reason in {"Converged", "Max iterations reached"}
-        _, phi, A, _ = final_state
+        _, _phi, A, _ = final_state
         scores = np.array([A.get(aid) for aid in G.agent_ids])
         assert np.std(scores) > 0.0, "All authority scores identical — no diversity"
 
@@ -390,13 +391,14 @@ class TestFailureInjection:
             rng=np.random.default_rng(24),
         )
         assert reason in {"Converged", "Max iterations reached"}
-        _, phi, A, _ = final_state
+        _, phi, _A, _ = final_state
         assert np.all(np.isfinite(phi.W_phi)), "W_phi NaN with zero-weight initial graph"
 
 
 # ---------------------------------------------------------------------------
 # Class 4: Authority stability
 # ---------------------------------------------------------------------------
+
 
 class TestAuthorityStability:
 
@@ -406,7 +408,7 @@ class TestAuthorityStability:
         G = _random_graph(n, density=0.2, seed=30)
         state = _make_state(G, seed=30)
 
-        final_state, reason, diag = emergo_kernel(
+        _final_state, _reason, diag = emergo_kernel(
             state,
             max_iterations=500,
             rng=np.random.default_rng(30),
@@ -414,9 +416,9 @@ class TestAuthorityStability:
         )
         for rec in diag.records:
             for aid, score in rec.authority_scores.items():
-                assert 0.0 <= score <= 1.0, (
-                    f"Authority out of [0,1] at iter {rec.iteration}, agent {aid}: {score}"
-                )
+                assert (
+                    0.0 <= score <= 1.0
+                ), f"Authority out of [0,1] at iter {rec.iteration}, agent {aid}: {score}"
 
     def test_authority_not_always_decreasing(self):
         """20 agents, 400 iters. At least one agent has final authority >= initial (0.5)."""
@@ -424,16 +426,14 @@ class TestAuthorityStability:
         G = _random_graph(n, density=0.3, seed=31)
         state = _make_state(G, seed=31)
 
-        final_state, reason = emergo_kernel(
+        final_state, _reason = emergo_kernel(
             state,
             max_iterations=400,
             rng=np.random.default_rng(31),
         )
-        _, phi, A, _ = final_state
+        _, _phi, A, _ = final_state
         scores = [A.get(aid) for aid in G.agent_ids]
-        assert max(scores) >= 0.5, (
-            f"All authority scores below baseline 0.5; max={max(scores):.4f}"
-        )
+        assert max(scores) >= 0.5, f"All authority scores below baseline 0.5; max={max(scores):.4f}"
 
     def test_authority_diversity_maintained(self):
         """30 agents, 500 iters. std(final_authority_scores) > 0.01."""
@@ -441,16 +441,14 @@ class TestAuthorityStability:
         G = _random_graph(n, density=0.3, seed=32)
         state = _make_state(G, seed=32)
 
-        final_state, reason = emergo_kernel(
+        final_state, _reason = emergo_kernel(
             state,
             max_iterations=500,
             rng=np.random.default_rng(32),
         )
-        _, phi, A, _ = final_state
+        _, _phi, A, _ = final_state
         scores = np.array([A.get(aid) for aid in G.agent_ids])
-        assert np.std(scores) > 0.01, (
-            f"Authority diversity too low: std={np.std(scores):.4f}"
-        )
+        assert np.std(scores) > 0.01, f"Authority diversity too low: std={np.std(scores):.4f}"
 
     def test_min_authority_baseline_respected(self):
         """Regression test for authority collapse bug. After 200 iters, max authority > 0.3."""
@@ -458,13 +456,11 @@ class TestAuthorityStability:
         G = _random_graph(n, density=0.3, seed=33)
         state = _make_state(G, seed=33)
 
-        final_state, reason = emergo_kernel(
+        final_state, _reason = emergo_kernel(
             state,
             max_iterations=200,
             rng=np.random.default_rng(33),
         )
-        _, phi, A, _ = final_state
+        _, _phi, A, _ = final_state
         scores = [A.get(aid) for aid in G.agent_ids]
-        assert max(scores) > 0.3, (
-            f"Authority collapsed below 0.3; max score={max(scores):.4f}"
-        )
+        assert max(scores) > 0.3, f"Authority collapsed below 0.3; max score={max(scores):.4f}"

@@ -199,8 +199,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # Tests and examples are less strict about annotations
-"tests/*"    = ["ANN", "N802"]
-"examples/*" = ["ANN", "N802", "N803", "T201"]  # T201 = print statements
+"tests/*"    = ["ANN", "N802", "RUF001", "RUF002", "RUF003"]  # allow math symbols
+"examples/*" = ["ANN", "N802", "N803", "T201", "RUF001", "RUF002", "RUF003"]  # T201 = print, RUFxxx = math chars
 
 [tool.ruff.lint.isort]
 known-first-party = ["emergo"]

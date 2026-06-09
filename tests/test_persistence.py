@@ -1,12 +1,10 @@
 """Tests for emergo.persistence — save/load round-trip."""
-import tempfile
-from pathlib import Path
 
 import numpy as np
 import pytest
 
-from emergo import Graph, make_initial_phi, make_initial_authority, emergo_kernel
-from emergo.persistence import save_state, load_state
+from emergo import Graph, emergo_kernel, make_initial_authority, make_initial_phi
+from emergo.persistence import load_state, save_state
 from emergo.types import Errors
 
 
@@ -59,8 +57,8 @@ class TestJsonRoundTrip:
         p = save_state(state, tmp_path / "state", format="json")
         assert p.suffix == ".json"
         assert p.exists()
-        G, phi, A, E = state
-        G2, phi2, A2, E2 = load_state(p)
+        G, phi, A, _E = state
+        G2, phi2, A2, _E2 = load_state(p)
         assert G2.agent_ids == G.agent_ids
         np.testing.assert_array_almost_equal(G2.adjacency, G.adjacency, decimal=10)
         np.testing.assert_array_almost_equal(phi2.W_phi, phi.W_phi, decimal=10)
@@ -96,7 +94,7 @@ class TestRoundTripAfterKernelRun:
 
         state_final, reason = emergo_kernel(state_restored, max_iterations=50)
         assert reason in {"Converged", "Max iterations reached"}
-        _, phi_f, A_f, _ = state_final
+        _, phi_f, _A_f, _ = state_final
         assert np.all(np.isfinite(phi_f.W_phi))
 
 

@@ -1,4 +1,5 @@
 """Regression tests for known failure modes. Each test pins a previously-observed bug."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -10,12 +11,11 @@ from emergo import (
     make_initial_authority,
     make_initial_phi,
 )
-from emergo.phi_update import phi_update
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 def _random_graph(n, density=0.3, seed=0):
     rng = np.random.default_rng(seed)
@@ -36,6 +36,7 @@ def _make_state(n, density=0.3, seed=0):
 # Class 1: Authority collapse regression
 # ---------------------------------------------------------------------------
 
+
 class TestAuthorityCollapseRegression:
 
     def test_multi_participant_ce_no_collapse_regression(self):
@@ -48,7 +49,7 @@ class TestAuthorityCollapseRegression:
         n = 20
         state = _make_state(n, density=0.3, seed=100)
 
-        final_state, reason, diag = emergo_kernel(
+        _final_state, _reason, diag = emergo_kernel(
             state,
             max_iterations=400,
             rng=np.random.default_rng(100),
@@ -57,11 +58,14 @@ class TestAuthorityCollapseRegression:
 
         # Find multi-participant accepted CEs with recorded authority deltas
         multi_ces = [
-            rec for rec in diag.records
-            if (rec.ce_accepted
+            rec
+            for rec in diag.records
+            if (
+                rec.ce_accepted
                 and rec.ce_participants is not None
                 and len(rec.ce_participants) >= 2
-                and len(rec.authority_delta) >= 2)
+                and len(rec.authority_delta) >= 2
+            )
         ]
 
         if len(multi_ces) == 0:
@@ -74,10 +78,7 @@ class TestAuthorityCollapseRegression:
             if prop is None or prop not in rec.authority_delta:
                 continue
             prop_delta = rec.authority_delta[prop]
-            non_prop_deltas = [
-                v for k, v in rec.authority_delta.items()
-                if k != prop
-            ]
+            non_prop_deltas = [v for k, v in rec.authority_delta.items() if k != prop]
             if any(abs(prop_delta - nd) > 1e-12 for nd in non_prop_deltas):
                 differentiated += 1
 
@@ -96,7 +97,7 @@ class TestAuthorityCollapseRegression:
         n = 10
         state = _make_state(n, density=0.3, seed=101)
 
-        final_state, reason, diag = emergo_kernel(
+        _final_state, _reason, diag = emergo_kernel(
             state,
             max_iterations=200,
             rng=np.random.default_rng(101),
@@ -127,6 +128,7 @@ class TestAuthorityCollapseRegression:
 # Class 2: Phi instability regression
 # ---------------------------------------------------------------------------
 
+
 class TestPhiInstabilityRegression:
 
     def test_phi_frob_norm_bounded(self):
@@ -134,7 +136,7 @@ class TestPhiInstabilityRegression:
         n = 20
         state = _make_state(n, density=0.3, seed=200)
 
-        final_state, reason = emergo_kernel(
+        final_state, _reason = emergo_kernel(
             state,
             max_iterations=500,
             rng=np.random.default_rng(200),
@@ -148,7 +150,7 @@ class TestPhiInstabilityRegression:
         n = 20
         state = _make_state(n, density=0.3, seed=201)
 
-        final_state, reason = emergo_kernel(
+        final_state, _reason = emergo_kernel(
             state,
             max_iterations=500,
             rng=np.random.default_rng(201),
@@ -156,16 +158,14 @@ class TestPhiInstabilityRegression:
         _, phi, _, _ = final_state
         rank = np.linalg.matrix_rank(phi.W_phi)
         min_rank = phi.d_latent // 2
-        assert rank >= min_rank, (
-            f"W_phi rank collapsed: rank={rank} < d_latent//2={min_rank}"
-        )
+        assert rank >= min_rank, f"W_phi rank collapsed: rank={rank} < d_latent//2={min_rank}"
 
     def test_phi_no_nan_under_extreme_lr(self):
         """Run 10 agents, 200 iters with phi_lr=0.1. Assert no NaN/Inf in phi parameters."""
         n = 10
         state = _make_state(n, density=0.3, seed=202)
 
-        final_state, reason = emergo_kernel(
+        final_state, _reason = emergo_kernel(
             state,
             max_iterations=200,
             phi_lr=0.1,
@@ -182,6 +182,7 @@ class TestPhiInstabilityRegression:
 # Class 3: Topology freeze regression
 # ---------------------------------------------------------------------------
 
+
 class TestTopologyFreezeRegression:
 
     def test_ce_acceptance_never_zero_for_100_steps(self):
@@ -192,7 +193,7 @@ class TestTopologyFreezeRegression:
         n = 20
         state = _make_state(n, density=0.3, seed=300)
 
-        final_state, reason, diag = emergo_kernel(
+        _final_state, _reason, diag = emergo_kernel(
             state,
             max_iterations=500,
             rng=np.random.default_rng(300),
@@ -209,7 +210,7 @@ class TestTopologyFreezeRegression:
 
         min_rate = float("inf")
         for start in range(0, n_records - window + 1, window):
-            window_slice = accepted_flags[start: start + window]
+            window_slice = accepted_flags[start : start + window]
             rate = float(np.mean(window_slice))
             min_rate = min(min_rate, rate)
 
@@ -222,6 +223,7 @@ class TestTopologyFreezeRegression:
 # ---------------------------------------------------------------------------
 # Class 4: Determinism regression
 # ---------------------------------------------------------------------------
+
 
 class TestDeterminismRegression:
 
@@ -253,9 +255,7 @@ class TestDeterminismRegression:
         for aid in G1.agent_ids:
             v1 = A1.get(aid)
             v2 = A2.get(aid)
-            assert v1 == v2, (
-                f"Determinism violation for {aid}: run1={v1}, run2={v2}"
-            )
+            assert v1 == v2, f"Determinism violation for {aid}: run1={v1}, run2={v2}"
 
     def test_different_seeds_produce_different_results(self):
         """Run kernel with seed=42 vs seed=99. At least one authority score must differ.
@@ -286,6 +286,5 @@ class TestDeterminismRegression:
 
         any_different = any(s1 != s2 for s1, s2 in zip(scores42, scores99))
         assert any_different, (
-            "seed=42 and seed=99 produced identical authority scores; "
-            "RNG appears unused"
+            "seed=42 and seed=99 produced identical authority scores; " "RNG appears unused"
         )

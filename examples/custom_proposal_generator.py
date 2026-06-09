@@ -12,10 +12,11 @@ The demo runs each generator for 100 iterations and compares CE acceptance rates
 Run:
     python examples/custom_proposal_generator.py
 """
+
 from __future__ import annotations
 
-import sys
 from pathlib import Path
+import sys
 
 import numpy as np
 
@@ -70,10 +71,12 @@ def _run(label: str, gen, G: Graph, seed: int, iterations: int = 100) -> None:
     )
     _, _, A_final, _ = final_state
     mean_auth = np.mean([A_final.get(a) for a in A_final.scores])
-    print(f"[{label:30s}]  "
-          f"reason={reason:<25}  "
-          f"accept={obs.ce_acceptance_rate:.1%}  "
-          f"mean_authority={mean_auth:.3f}")
+    print(
+        f"[{label:30s}]  "
+        f"reason={reason:<25}  "
+        f"accept={obs.ce_acceptance_rate:.1%}  "
+        f"mean_authority={mean_auth:.3f}"
+    )
 
 
 def main() -> None:
@@ -88,11 +91,11 @@ def main() -> None:
 
     # 2. Sequence: alternate add/remove on the hub→spoke edge
     structured_ces = [
-        _make_ce("add_edge",    (ids[0], ids[3]), weight=0.6),
+        _make_ce("add_edge", (ids[0], ids[3]), weight=0.6),
         _make_ce("remove_edge", (ids[0], ids[3])),
-        _make_ce("add_edge",    (ids[1], ids[2]), weight=0.7),
+        _make_ce("add_edge", (ids[1], ids[2]), weight=0.7),
         _make_ce("remove_edge", (ids[1], ids[2])),
-        _make_ce("add_edge",    (ids[2], ids[4]), weight=0.5),
+        _make_ce("add_edge", (ids[2], ids[4]), weight=0.5),
     ]
     seq_gen = SequenceProposalGenerator(structured_ces, loop=True)
     _run("SequenceProposalGenerator(loop)", seq_gen, G, seed=2)

@@ -15,11 +15,12 @@ Run:
     python examples/convergence_demo.py
     python examples/convergence_demo.py --agents 8 --iterations 1000 --seed 42
 """
+
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
+import sys
 
 import numpy as np
 
@@ -81,8 +82,10 @@ def main() -> None:
     args = parser.parse_args()
 
     n = args.agents
-    print(f"=== Emergo Convergence Demo  agents={n}  iterations={args.iterations}  "
-          f"optimizer={args.optimizer}  seed={args.seed} ===\n")
+    print(
+        f"=== Emergo Convergence Demo  agents={n}  iterations={args.iterations}  "
+        f"optimizer={args.optimizer}  seed={args.seed} ===\n"
+    )
 
     G = build_ring_graph(n)
     phi = make_initial_phi(d_latent=8, d_features=16, d_ce=4, seed=args.seed)
@@ -107,16 +110,18 @@ def main() -> None:
     else:
         final_state, reason, diag = result
 
-    G_final, phi_final, A_final, E_history = final_state
+    _G_final, _phi_final, A_final, _E_history = final_state
 
     print(f"Termination: {reason}")
     print(f"Iterations seen by observer: {len(obs._ce_history)}")
     print(f"CE acceptance rate: {obs.ce_acceptance_rate:.1%}")
     if obs.phi_losses:
-        losses = [l for _, l in obs.phi_losses]
-        print(f"phi_loss: first={losses[0]:.6f}  "
-              f"mid={losses[len(losses)//2]:.6f}  "
-              f"last={losses[-1]:.6f}")
+        losses = [loss for _, loss in obs.phi_losses]
+        print(
+            f"phi_loss: first={losses[0]:.6f}  "
+            f"mid={losses[len(losses)//2]:.6f}  "
+            f"last={losses[-1]:.6f}"
+        )
     print()
 
     print("--- Final authority scores ---")

@@ -19,14 +19,14 @@ Usage:
     # Run with a real OpenAI-compatible endpoint (requires OPENAI_API_KEY)
     python examples/llm_task_runner.py --real-llm --model gpt-4o-mini
 """
+
 from __future__ import annotations
 
 import argparse
-import sys
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+import sys
+import time
 
 import numpy as np
 
@@ -42,7 +42,6 @@ from emergo import (
     make_initial_phi,
 )
 from emergo.executor import TaskOutcome
-
 
 # ---------------------------------------------------------------------------
 # Mock LLM client (no API keys required)
@@ -67,7 +66,7 @@ class MockLLMClient:
     See ``RealOpenAIClient`` stub below.
     """
 
-    _RESPONSES: dict[str, str] = {
+    _RESPONSES: dict[str, str] = {  # noqa: RUF012 — class-level constant, not per-instance
         "search": "Found 12 relevant papers on multi-agent coordination dynamics.",
         "fetch": "Downloaded 3 source documents (total 42 KB).",
         "extract": "Extracted 8 key findings: authority gradients, phi convergence, ...",
@@ -101,9 +100,7 @@ class MockLLMClient:
             )
 
         # Look up a canned response
-        response_key = next(
-            (k for k in self._RESPONSES if k in capability.lower()), "default"
-        )
+        response_key = next((k for k in self._RESPONSES if k in capability.lower()), "default")
         content = self._RESPONSES[response_key]
         tokens = len(content.split()) * 2  # rough estimate
 
@@ -254,8 +251,10 @@ def run_research_workflow(
     print(f"  {status}  ({elapsed*1000:.0f}ms wall time)")
     print(f"  Tasks completed : {result.tasks_succeeded}/{result.tasks_attempted}")
     print(f"  Resources spent : {result.resources_spent:.1f}")
-    print(f"  LLM calls       : {stats.total_calls} ({stats.successful_calls} ok, "
-          f"{stats.failed_calls} failed)")
+    print(
+        f"  LLM calls       : {stats.total_calls} ({stats.successful_calls} ok, "
+        f"{stats.failed_calls} failed)"
+    )
     print(f"  LLM tokens used : {stats.total_tokens}")
     print(f"  Avg LLM latency : {stats.avg_latency_ms:.0f}ms (simulated)")
     if stats.results:
@@ -353,13 +352,11 @@ class RealOpenAIClient:
         self._model = model
         self._verbose = verbose
         try:
-            import openai  # noqa: F401 — optional dependency
+            import openai
 
             self._client = openai.OpenAI()
         except ImportError:
-            raise ImportError(
-                "openai package not installed. Run: pip install openai"
-            ) from None
+            raise ImportError("openai package not installed. Run: pip install openai") from None
 
     def complete(self, task_description: str, capability: str) -> LLMResponse:
         t0 = time.time()
@@ -422,8 +419,11 @@ def main() -> int:
     args = parser.parse_args()
 
     print("\nEmergo LLM Task Runner Integration Demo")
-    print("Uses MockLLMClient (no API keys needed)." if not args.real_llm else
-          f"Using real LLM: {args.model}")
+    print(
+        "Uses MockLLMClient (no API keys needed)."
+        if not args.real_llm
+        else f"Using real LLM: {args.model}"
+    )
 
     if args.real_llm:
         print("\nNote: --real-llm flag set. Attempting to use OpenAI client.")
@@ -439,11 +439,15 @@ def main() -> int:
     print("  Summary")
     print("=" * 60)
     all_success = r1["success"] and r2["success"]
-    print(f"  Research workflow  : {'PASS' if r1['success'] else 'FAIL'} "
-          f"({r1['tasks_succeeded']}/{r1['tasks_attempted']} tasks, "
-          f"{r1['llm_tokens']} tokens)")
-    print(f"  Code-gen workflow  : {'PASS' if r2['success'] else 'FAIL'} "
-          f"({r2['tasks_succeeded']} tasks, {r2['llm_tokens']} tokens)")
+    print(
+        f"  Research workflow  : {'PASS' if r1['success'] else 'FAIL'} "
+        f"({r1['tasks_succeeded']}/{r1['tasks_attempted']} tasks, "
+        f"{r1['llm_tokens']} tokens)"
+    )
+    print(
+        f"  Code-gen workflow  : {'PASS' if r2['success'] else 'FAIL'} "
+        f"({r2['tasks_succeeded']} tasks, {r2['llm_tokens']} tokens)"
+    )
     print()
     print("  ✓ LLM integration works: Executor.execute() → DependencyPlanner →")
     print("    per-task LLM calls → authority updates → emergent coordination.")

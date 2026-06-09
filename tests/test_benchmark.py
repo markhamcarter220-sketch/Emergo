@@ -173,6 +173,7 @@ def test_diagnostics_at_scale(n_agents):
 # Extended performance benchmarks: 50/100-agent wall-time, phi scaling
 # ---------------------------------------------------------------------------
 
+
 class TestPerformanceBenchmarks:
     """Performance benchmarks for larger agent counts and phi_update scaling."""
 
@@ -186,9 +187,7 @@ class TestPerformanceBenchmarks:
             rng=np.random.default_rng(600),
         )
         elapsed = time.time() - t0
-        assert elapsed < 30.0, (
-            f"50-agent/200-iter kernel took {elapsed:.1f}s > 30s limit"
-        )
+        assert elapsed < 30.0, f"50-agent/200-iter kernel took {elapsed:.1f}s > 30s limit"
 
     def test_100_agent_wall_time(self):
         """100 agents, 100 iters. Must complete in < 30s."""
@@ -200,17 +199,15 @@ class TestPerformanceBenchmarks:
             rng=np.random.default_rng(700),
         )
         elapsed = time.time() - t0
-        assert elapsed < 30.0, (
-            f"100-agent/100-iter kernel took {elapsed:.1f}s > 30s limit"
-        )
+        assert elapsed < 30.0, f"100-agent/100-iter kernel took {elapsed:.1f}s > 30s limit"
 
     def test_phi_update_scales(self):
         """Run phi_update 3 times with increasing history sizes (10, 50, 200).
 
         Assert each call completes in < 5s. Verifies phi_update doesn't blow up.
         """
-        from emergo.phi_update import phi_update
         from emergo import CoordinationEvent
+        from emergo.phi_update import phi_update
 
         rng = np.random.default_rng(800)
         n = 10
@@ -230,22 +227,23 @@ class TestPerformanceBenchmarks:
             ]
             # Build synthetic error history
             from emergo.types import Errors
+
             e_history = [
                 Errors(per_agent={f"agent{j}": float(rng.random()) for j in range(n)})
                 for _ in range(history_size)
             ]
 
             t0 = time.time()
-            phi_next, loss = phi_update(
+            phi_next, _loss = phi_update(
                 phi0,
                 g_history,
                 ce_history,
                 e_history,
             )
             elapsed = time.time() - t0
-            assert elapsed < 5.0, (
-                f"phi_update with history_size={history_size} took {elapsed:.2f}s > 5s"
-            )
+            assert (
+                elapsed < 5.0
+            ), f"phi_update with history_size={history_size} took {elapsed:.2f}s > 5s"
             assert phi_next is not None
 
     def test_memory_phi_not_growing_between_batches(self):
@@ -256,7 +254,7 @@ class TestPerformanceBenchmarks:
         """
         n = 10
         state1 = _make_state(n, seed=900)
-        state2 = _make_state(n, seed=900)  # same initial state
+        _make_state(n, seed=900)  # same initial state
 
         final_state1, _ = emergo_kernel(
             state1,

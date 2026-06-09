@@ -8,11 +8,12 @@ Run:
     python examples/tutorial_first_swarm.py
     python examples/tutorial_first_swarm.py --viz   # requires pip install "emergo[viz]"
 """
+
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
+import sys
 
 import numpy as np
 
@@ -28,10 +29,10 @@ from emergo import (
     run_health_check,
 )
 
-
 # ---------------------------------------------------------------------------
 # 1. Build an 8-agent mesh graph (density ~0.3)
 # ---------------------------------------------------------------------------
+
 
 def build_mesh_graph(n: int = 8, density: float = 0.3, seed: int = 42) -> Graph:
     """Build a random sparse directed graph with the given edge density."""
@@ -68,8 +69,9 @@ def print_authority_table(A, title: str = "Authority Scores") -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="First Emergo Swarm tutorial")
-    parser.add_argument("--viz", action="store_true",
-                        help="Generate plots (requires pip install 'emergo[viz]')")
+    parser.add_argument(
+        "--viz", action="store_true", help="Generate plots (requires pip install 'emergo[viz]')"
+    )
     parser.add_argument("--agents", type=int, default=8, help="Number of agents")
     parser.add_argument("--iterations", type=int, default=1000, help="Max kernel iterations")
     args = parser.parse_args()
@@ -89,7 +91,7 @@ def main() -> None:
     # -----------------------------------------------------------------------
     print_banner("Step 2: Initialize phi and Authority")
     phi0 = make_initial_phi(d_latent=8, d_features=16, d_ce=4, seed=42)
-    A0   = make_initial_authority(G0.agent_ids, baseline=0.5)
+    A0 = make_initial_authority(G0.agent_ids, baseline=0.5)
     print(f"  Latent dims  : {phi0.d_latent}")
     print(f"  Feature dims : {phi0.d_features}")
     print(f"  CE dims      : {phi0.d_ce}")
@@ -113,7 +115,7 @@ def main() -> None:
         collect_diagnostics=True,
     )
 
-    G_final, phi_final, A_final, E_history = final_state
+    _G_final, _phi_final, A_final, _E_history = final_state
     n_accepted = sum(1 for _, ok in obs._ce_history if ok)
     print(f"  Termination  : {reason}")
     print(f"  Accepted CEs : {n_accepted} / {len(obs._ce_history)}")
@@ -143,7 +145,7 @@ def main() -> None:
     print_banner("Step 6: Health Check (8 Failure-Mode Detectors)")
     results = run_health_check(diag, final_state)
     triggered = [r for r in results if r.triggered]
-    ok_count  = len(results) - len(triggered)
+    ok_count = len(results) - len(triggered)
     print(f"  Passed  : {ok_count}/{len(results)}")
     print(f"  Warnings: {len(triggered)}/{len(results)}")
     for r in results:
@@ -157,6 +159,7 @@ def main() -> None:
         print_banner("Step 7: Visualizations")
         try:
             from emergo.visualize import render_health_dashboard
+
             output_dir = Path("./tutorial_plots")
             render_health_dashboard(diag, final_state, output_dir=str(output_dir))
             print(f"  Plots written to {output_dir.resolve()}/")

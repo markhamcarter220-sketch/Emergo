@@ -10,12 +10,12 @@ This script demonstrates:
 Run:
     python examples/tutorial_custom_proposal_lux.py
 """
+
 from __future__ import annotations
 
-import sys
 from collections import Counter
 from pathlib import Path
-from typing import Optional
+import sys
 
 import numpy as np
 
@@ -37,10 +37,10 @@ from emergo import (
 )
 from emergo.types import Authority, CoordinationEvent
 
-
 # ---------------------------------------------------------------------------
 # 1. Custom ProposalGenerator: always proposes from the highest-authority agent
 # ---------------------------------------------------------------------------
+
 
 class TopAuthorityProposalGenerator:
     """Always selects the highest-authority agent as the CE proposer.
@@ -61,7 +61,7 @@ class TopAuthorityProposalGenerator:
         A_t: Authority,
         G_t: Graph,
         rng: np.random.Generator,
-    ) -> Optional[CoordinationEvent]:
+    ) -> CoordinationEvent | None:
         if G_t.n_agents < 2:
             return None
 
@@ -70,11 +70,11 @@ class TopAuthorityProposalGenerator:
         # Deterministic: pick the agent with the highest authority score.
         # Break ties with the lowest index (consistent ordering).
         top_agent = max(agents, key=lambda a: (A_t.get(a), -agents.index(a)))
-        from_idx  = G_t.agent_index(top_agent)
+        from_idx = G_t.agent_index(top_agent)
 
         # Pick a random target (uniform over all other agents)
         candidates = [i for i in range(G_t.n_agents) if i != from_idx]
-        to_idx   = int(rng.choice(candidates))
+        to_idx = int(rng.choice(candidates))
         to_agent = agents[to_idx]
 
         self._n_proposed += 1
@@ -137,12 +137,12 @@ def main() -> None:
     # Step 2: TopAuthorityProposalGenerator
     # -----------------------------------------------------------------------
     print_banner("Step 2: TopAuthorityProposalGenerator")
-    G0   = build_test_graph(n=6, seed=1)
+    G0 = build_test_graph(n=6, seed=1)
     phi0 = make_initial_phi(d_latent=8, d_features=16, d_ce=4, seed=1)
-    A0   = make_initial_authority(G0.agent_ids, baseline=0.5)
+    A0 = make_initial_authority(G0.agent_ids, baseline=0.5)
 
-    top_gen  = TopAuthorityProposalGenerator()
-    obs_top  = HistoryObserver()
+    top_gen = TopAuthorityProposalGenerator()
+    obs_top = HistoryObserver()
 
     state_top, reason_top = emergo_kernel(
         (G0, phi0, A0, []),
@@ -154,7 +154,7 @@ def main() -> None:
 
     _, _, A_top, _ = state_top
     top_agent = max(A_top.scores, key=A_top.scores.get)
-    top_dist  = top_gen.proposal_distribution
+    top_dist = top_gen.proposal_distribution
 
     print(f"  Termination    : {reason_top}")
     print(f"  Accept rate    : {obs_top.ce_acceptance_rate:.1%}")
@@ -170,11 +170,13 @@ def main() -> None:
     print_banner("Step 3: WeightedMixGenerator (70% Default + 30% TopAuthority)")
 
     default_gen = DefaultProposalGenerator()
-    mix_top     = TopAuthorityProposalGenerator()
-    mixed_gen   = WeightedMixGenerator([
-        (default_gen, 0.70),
-        (mix_top,     0.30),
-    ])
+    mix_top = TopAuthorityProposalGenerator()
+    mixed_gen = WeightedMixGenerator(
+        [
+            (default_gen, 0.70),
+            (mix_top, 0.30),
+        ]
+    )
 
     obs_mix = HistoryObserver()
     state_mix, reason_mix, diag_mix = emergo_kernel(
@@ -192,18 +194,17 @@ def main() -> None:
 
     # CE proposer distribution from diagnostics
     proposer_counts = Counter(
-        r.ce_proposer for r in diag_mix.records
-        if r.ce_accepted and r.ce_proposer is not None
+        r.ce_proposer for r in diag_mix.records if r.ce_accepted and r.ce_proposer is not None
     )
     total_accepted = sum(proposer_counts.values()) or 1
     print("\n  Accepted-CE distribution (mixed generator):")
     for agent_id, cnt in proposer_counts.most_common():
         frac = cnt / total_accepted
         auth = A_mix.get(agent_id)
-        bar  = "█" * int(frac * 30)
+        bar = "█" * int(frac * 30)
         print(f"    {agent_id:12s}  {frac:.1%}  (auth={auth:.3f})  {bar}")
 
-    top_proposer  = proposer_counts.most_common(1)[0][0] if proposer_counts else "?"
+    top_proposer = proposer_counts.most_common(1)[0][0] if proposer_counts else "?"
     top_authority = max(A_mix.scores, key=A_mix.scores.get)
     if top_proposer == top_authority:
         print(f"\n  ✓ Top proposer ({top_proposer}) == top-authority agent — exploit is working.")
@@ -230,10 +231,12 @@ def main() -> None:
     # -----------------------------------------------------------------------
     print_banner("Step 5: Full Pipeline — Custom Proposals + Lux + Executor")
 
-    final_gen = WeightedMixGenerator([
-        (DefaultProposalGenerator(), 0.70),
-        (TopAuthorityProposalGenerator(), 0.30),
-    ])
+    final_gen = WeightedMixGenerator(
+        [
+            (DefaultProposalGenerator(), 0.70),
+            (TopAuthorityProposalGenerator(), 0.30),
+        ]
+    )
 
     final_state, final_reason = emergo_kernel(
         (G0, phi0, A0, []),
@@ -260,17 +263,19 @@ def main() -> None:
     )
 
     result = executor.execute(goal, final_state)
-    print(f"\n  Execution result:")
+    print("\n  Execution result:")
     print(f"    goal_id        : {result.goal_id}")
     print(f"    success        : {result.success}")
     print(f"    tasks_attempted: {result.tasks_attempted}")
     print(f"    tasks_succeeded: {result.tasks_succeeded}")
     print(f"    resources_spent: {result.resources_spent:.1f}")
-    print(f"    audit IDs      : {result.audit_ids[:2]}{'...' if len(result.audit_ids) > 2 else ''}")
+    print(
+        f"    audit IDs      : {result.audit_ids[:2]}{'...' if len(result.audit_ids) > 2 else ''}"
+    )
 
     print_banner("Done")
-    print(f"  Demonstrated: TopAuthorityProposalGenerator + WeightedMixGenerator")
-    print(f"  + Lux capability grants + Executor task execution.")
+    print("  Demonstrated: TopAuthorityProposalGenerator + WeightedMixGenerator")
+    print("  + Lux capability grants + Executor task execution.")
     print()
 
 

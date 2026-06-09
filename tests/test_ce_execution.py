@@ -109,3 +109,20 @@ class TestImmutability:
         G_next, ok, _ = ce_execute(three_agent_graph, ce, lux, default_authority)
         assert ok
         assert not G_next.capabilities.flags.writeable
+
+
+class TestSelfLoopRejection:
+    def test_add_edge_self_loop_rejected(self, three_agent_graph, default_authority, lux):
+        """INV-12: self-loops must be rejected before any graph mutation."""
+        ce = make_ce("add_edge", ("A", "A"), weight=1.0)
+        G_next, ok, _ = ce_execute(three_agent_graph, ce, lux, default_authority)
+        assert ok is False
+        assert G_next is three_agent_graph
+
+    def test_add_edge_self_loop_graph_unchanged(self, three_agent_graph, default_authority, lux):
+        """INV-12: graph must be byte-identical after self-loop rejection."""
+        original_adj = three_agent_graph.adjacency.copy()
+        ce = make_ce("add_edge", ("B", "B"), weight=0.5)
+        G_next, ok, _ = ce_execute(three_agent_graph, ce, lux, default_authority)
+        assert ok is False
+        np.testing.assert_array_equal(G_next.adjacency, original_adj)

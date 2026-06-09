@@ -77,6 +77,7 @@ def emergo_kernel(
     phi_lr: float | None = None,
     phi_grad_clip: float = 1.0,
     phi_early_stop_patience: int = 5,
+    phi_force_adapt_interval: int = 1000,
 ) -> tuple[State, str] | tuple[State, str, KernelDiagnostics]:
     """Run the fixed-point loop until convergence or max_iterations.
 
@@ -98,6 +99,8 @@ def emergo_kernel(
       phi_lr:                 Learning rate for phi_update.  None = use module default.
       phi_grad_clip:          Gradient clipping magnitude for phi_update.
       phi_early_stop_patience: Early-stopping patience for phi_update (0 = disabled).
+      phi_force_adapt_interval: Every this many iterations, bypass early stopping to
+                                prevent stalled φ adaptation (INV-17).  Default 1000.
 
     Returns:
       - (final_state, reason) when collect_diagnostics=False (default)
@@ -176,6 +179,7 @@ def emergo_kernel(
 
         # Step 4: PhiUpdate — joint optimization of φ and F
         phi_loss_value: float | None = None
+        force_adapt = (t > 0) and (t % phi_force_adapt_interval == 0)  # INV-17
         if (t % phi_update_interval == 0) and len(g_history) >= 2:
             phi_next, phi_loss_value = phi_update(
                 phi_t,
@@ -185,7 +189,8 @@ def emergo_kernel(
                 lr=_phi_lr,
                 grad_clip=phi_grad_clip,
                 optimizer=phi_optimizer,
-                early_stop_patience=phi_early_stop_patience,
+                early_stop_patience=phi_early_stop_patience if not force_adapt else 0,
+                force_adapt=force_adapt,
             )
             if phi_loss_value is not None:
                 fire_observers(_observers, "on_phi_updated", t, phi_loss_value)

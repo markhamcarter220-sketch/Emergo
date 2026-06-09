@@ -75,6 +75,8 @@ def _apply(G: Graph, CE: CoordinationEvent, params: dict) -> Graph:
 
 def _add_edge(G: Graph, CE: CoordinationEvent, params: dict) -> Graph:
     from_id, to_id = CE.participants[0], CE.participants[1]
+    if from_id == to_id:  # INV-12: self-loops bypass authority accountability
+        raise ValueError(f"Self-loop {from_id}→{from_id} not permitted (INV-12)")
     weight = float(params.get("weight", 1.0))
     i, j = G.agent_index(from_id), G.agent_index(to_id)
     adj = _writeable_copy(G.adjacency)

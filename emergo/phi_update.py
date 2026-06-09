@@ -74,6 +74,7 @@ def phi_update(
     early_stop_patience: int = 5,
     early_stop_delta: float = 1e-6,
     rank_lambda: float = _RANK_LAMBDA,
+    force_adapt: bool = False,
 ) -> tuple[PhiMap, float]:
     """Jointly refine φ and F over the full graph/CE history.
 
@@ -91,6 +92,8 @@ def phi_update(
         early_stop_delta:     Minimum loss improvement for early stopping.
         rank_lambda:          Rank-regularization strength (EMERGO_RANK_PENALTY env var).
                               0.0 = disabled.  Default 0.1.
+        force_adapt:          If True, bypass early stopping for this call (INV-17).
+                              Used by kernel when phi_force_adapt_interval fires.
 
     Returns:
         (phi_next, fitting_loss) — phi is rank-regularized to prevent entanglement collapse.
@@ -129,7 +132,7 @@ def phi_update(
         else:
             _apply_sgd(phi_candidate, grads, lr, grad_clip)
 
-        if early_stop_patience > 0:
+        if early_stop_patience > 0 and not force_adapt:  # INV-17
             improvement = prev_loss - loss
             if improvement < early_stop_delta:
                 no_improve_count += 1

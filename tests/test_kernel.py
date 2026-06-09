@@ -71,3 +71,26 @@ class TestKernel:
         # Single-agent graph: no CEs can be sampled; should exit cleanly
         _state, reason = emergo_kernel((G0, phi0, A0, []), max_iterations=10)
         assert reason == "Max iterations reached"
+
+
+class TestForcedAdaptation:
+    def test_phi_forced_adaptation_interval(self):
+        """INV-17: phi_force_adapt_interval param is accepted and kernel completes."""
+        state, reason = emergo_kernel(
+            _small_initial_state(),
+            max_iterations=200,
+            phi_update_interval=10,
+            phi_force_adapt_interval=50,
+            phi_early_stop_patience=2,
+        )
+        assert reason in {"Converged", "Max iterations reached"}
+        _, _, A, _ = state
+        for v in A.scores.values():
+            assert 0.0 <= v <= 0.8
+
+    def test_authority_ceiling_enforced(self):
+        """INV-11: authority must never exceed 0.8 after fix."""
+        state, _ = emergo_kernel(_small_initial_state(), max_iterations=100)
+        _, _, A, _ = state
+        for aid, v in A.scores.items():
+            assert v <= 0.8, f"Authority {aid}={v:.4f} exceeds 0.8 cap"

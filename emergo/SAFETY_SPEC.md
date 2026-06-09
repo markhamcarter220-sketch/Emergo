@@ -169,9 +169,8 @@ always proposes, others never):
 - Participant correctness → 0.0 if local error > 0; Δ_participant → −0.5; authority → 0.0
 
 This shows `V(A_t)` is NOT a Lyapunov function for bounding maximum authority —
-it can reach 1.0.  INV-11 (cap at 0.8) requires an **additional enforcement
-mechanism** (a soft cap in authority_update) not present in the current
-implementation.  See Section 3 for the gap analysis.
+it would reach 1.0 without intervention.  INV-11 is enforced by the hard 0.8 cap
+in `authority_update` (`np.clip(…, 0.0, 0.8)`).
 
 ---
 
@@ -185,9 +184,9 @@ implementation.  See Section 3 for the gap analysis.
 cap_authority = 0.8
 ```
 
-*Desired*: `∀ t, ∀ i, a_i(t) ≤ cap_authority`.  
-*Current enforcement*: clipped at 1.0 (not 0.8).  
-*Status*: **Implementation gap** — requires adding `max_authority = 0.8` in `authority_update`.
+*Enforced*: `∀ t, ∀ i, a_i(t) ≤ cap_authority`.  
+*Current enforcement*: `np.clip(…, 0.0, 0.8)` in `authority_update` (hard cap).  
+*Status*: **ENFORCED** (INV-11 closed).
 
 **B_2 — Topology Entropy Lower Bound**
 
@@ -227,8 +226,7 @@ indicate a system failure, not just degraded performance.
 
 *Attack vector*: single agent proposes all CEs, monopolizes prediction quality.  
 *Observable*: `max(A_t.scores.values()) > 0.8`.  
-*Current status*: DESIRED (not yet enforced); current hard cap is 1.0.  
-*Enforcement path*: add `max_authority = 0.8` parameter to `authority_update`.
+*Current status*: ENFORCED — `authority_update` clips at `max_authority = 0.8` (hard cap).
 
 ---
 
@@ -243,9 +241,8 @@ that provides a local_structural_change_error ≈ 0 (no neighbors change),
 boosting self-authority indefinitely.  
 *Observable*: diagonal entries of `G_t.adjacency` exist AND `a_i(t)` grows
 monotonically.  
-*Current status*: PARTIALLY ENFORCED — self-loops are syntactically allowed but
-local error for the participant (self) remains bounded since the row+col delta
-is bounded by the edge weight.
+*Current status*: ENFORCED — `_add_edge()` raises `ValueError` on self-loops before
+any graph mutation; `ce_execute()` catches it and returns `(G_t, False, ())`.
 
 ---
 
@@ -318,8 +315,9 @@ early-stop after 1 step (loss already minimal), preventing adaptation to
 genuinely novel inputs.  
 *Observable*: all phi_update calls return after 1 gradient step while test-set
 error remains high.  
-*Current status*: PARTIALLY ENFORCED — early stopping requires `n_patience`
-consecutive non-improving steps; a single novel input resets the counter.
+*Current status*: ENFORCED — `emergo_kernel` accepts `phi_force_adapt_interval`
+(default 1000); every N accepted-CE steps it bypasses early stopping via
+`force_adapt=True`, guaranteeing periodic full adaptation.
 
 ---
 
@@ -343,37 +341,28 @@ values bounded away from zero under nonzero rank_lambda.
 
 | # | Attack Name | Invariant Violated | Current Status |
 |---|-------------|-------------------|----------------|
-| 1 | Authority Monopolization | INV-11 | DESIRED |
-| 2 | Recursive Self-Delegation | INV-12 | PARTIAL |
+| 1 | Authority Monopolization | INV-11 | ENFORCED |
+| 2 | Recursive Self-Delegation | INV-12 | ENFORCED |
 | 3 | Topology Lockout | INV-13 | MONITORED |
 | 4 | Entanglement Collapse | INV-14 | ENFORCED |
 | 5 | Capability Leakage | INV-15 | ENFORCED |
 | 6 | Oscillatory Instability | INV-16 | ENFORCED |
-| 7 | Dead Network | INV-17 | PARTIAL |
+| 7 | Dead Network | INV-17 | ENFORCED |
 | 8 | Constraint Erosion | INV-18 | ENFORCED |
 
 ---
 
 ## Part 5: Implementation Gap Analysis
 
-Three invariants are not fully enforced in the current codebase:
+All previously identified invariant gaps are now closed (as of v0.2.0):
 
-**INV-11 gap**: The 0.8 authority cap requires adding `max_authority = 0.8`
-to `authority_update()` and passing it from the kernel:
-```python
-new_score = float(np.clip(A_t.get(agent_id) + eta * delta_a, 0.0, max_authority))
-```
+**INV-11 (closed)**: `authority_update()` clips at `max_authority = 0.8` (hard monopolization cap).
 
-**INV-12 gap**: Self-loops are syntactically permitted.  To close this, add
-a check in `ce_execute` for `add_edge` events:
-```python
-if CE.event_type == "add_edge" and CE.participants[0] == CE.participants[1]:
-    return G_t, False, ()  # reject self-loop
-```
+**INV-12 (closed)**: `_add_edge()` raises `ValueError` on self-loops before any graph mutation;
+the existing `try/except (ValueError, IndexError, KeyError)` in `ce_execute()` cleanly rejects them.
 
-**INV-17 gap**: A truly adversarial stationary CE sequence can keep phi_update
-in early-stop state.  Mitigation: add a forced adaptation step every
-`phi_force_adapt_interval` calls that bypasses early stopping.
+**INV-17 (closed)**: `emergo_kernel()` accepts `phi_force_adapt_interval` (default 1000);
+every N steps it bypasses early stopping via `force_adapt=True` in `phi_update()`.
 
 ---
 

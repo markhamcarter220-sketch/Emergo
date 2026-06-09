@@ -181,22 +181,10 @@ def test_adversarial_authority_monopolization():
     max_auth = _max_authority(A_final)
     max_auth_history = [max(s.values()) for s in obs.authority_history]
 
-    # INV-11 (hard): no authority ever exceeds 1.0
+    # INV-11 (enforced): no authority ever exceeds 0.8
     assert all(
-        a <= 1.0 + 1e-9 for a in max_auth_history
-    ), f"INV-11 HARD VIOLATION: authority exceeded 1.0 — max={max(max_auth_history):.4f}"
-
-    # INV-11 (soft/desired): no authority exceeds 0.8
-    # NOTE: this WILL fail with current implementation (no 0.8 cap enforced)
-    # Kept as an explicit oracle to document the implementation gap.
-    if max_auth > 0.8:
-        import warnings
-
-        warnings.warn(
-            f"INV-11 DESIRED GAP: max authority {max_auth:.4f} > 0.8. "
-            "Add max_authority=0.8 to authority_update() to enforce INV-11.",
-            stacklevel=2,
-        )
+        a <= 0.8 + 1e-9 for a in max_auth_history
+    ), f"INV-11 VIOLATION: authority exceeded 0.8 — max={max(max_auth_history):.4f}"
 
     # Φ_safe: phi must stay admissible despite monopolization pressure
     safe = _check_phi_safe(phi_final)
@@ -556,23 +544,20 @@ def test_adversarial_dead_network():
 
 def test_adversarial_constraint_erosion():
     """
-    Attack: Pre-set one agent's authority near the maximum (0.95), then run
-            many CEs designed to push it past 1.0 through boundary erosion.
-    Oracle: Authority never exceeds 1.0 (INV-18 clip; hard boundary).
-            The np.clip(…, 0, 1) in authority_update enforces this absolutely.
-    Invariant: INV-18 (Safety Margin / Boundary Preservation)
-
-    This test also probes INV-11: if the desired 0.8 cap were enforced, the
-    pre-set 0.95 value would itself be rejected.
+    Attack: Pre-set one agent's authority near the 0.8 cap (0.75), then run
+            many CEs designed to push it past the cap through boundary erosion.
+    Oracle: Authority never exceeds 0.8 (INV-11 + INV-18 combined hard cap).
+            The np.clip(…, 0, 0.8) in authority_update enforces this absolutely.
+    Invariant: INV-11 (Authority Monopolization), INV-18 (Safety Margin)
     """
     n = 5
     G0, phi0, A0 = _ring(n, seed=7)
 
-    # Pre-set agent_0 authority near 1.0 (boundary probing)
-    A0.set("agent_0", 0.95)
+    # Pre-set agent_0 near the 0.8 cap (boundary probing)
+    A0.set("agent_0", 0.75)
 
     # Propose agent_0 as proposer repeatedly; with correctness→1, delta→+0.5*η
-    # Each step: a_0 + 0.025 → clipped at 1.0
+    # Each step: a_0 + 0.025 → clipped at 0.8
     attacking_ce = CoordinationEvent(
         event_type="add_edge",
         participants=("agent_0", "agent_1"),
@@ -590,31 +575,21 @@ def test_adversarial_constraint_erosion():
     )
     _, phi_final, A_final, _ = final_state
 
-    # INV-18 (hard boundary): authority MUST stay ≤ 1.0 at all times
+    # INV-11 + INV-18 (hard): authority MUST stay ≤ 0.8 at all times
     all_scores_flat = [score for snapshot in obs.authority_history for score in snapshot.values()]
     max_ever = max(all_scores_flat) if all_scores_flat else 0.0
 
-    assert max_ever <= 1.0 + 1e-9, (
-        f"INV-18 HARD VIOLATION: authority exceeded 1.0 = {max_ever:.8f}. "
-        "np.clip constraint violated!"
+    assert max_ever <= 0.8 + 1e-9, (
+        f"INV-11/INV-18 VIOLATION: authority exceeded 0.8 cap = {max_ever:.8f}. "
+        "np.clip(…, 0.0, 0.8) constraint violated!"
     )
 
     # No NaN from boundary interactions
     assert not np.any(np.isnan(phi_final.W_phi)), "NaN in phi during boundary erosion"
 
-    # INV-11 note (desired): if max_ever > 0.8, document the gap
-    if max_ever > 0.8:
-        import warnings
-
-        warnings.warn(
-            f"[INV-11 gap] max authority reached {max_ever:.4f} > 0.8 during "
-            "constraint erosion test. Desired: max_authority=0.8 cap in authority_update.",
-            stacklevel=2,
-        )
-
     print(
-        f"\n[INV-18] Constraint Erosion: max_authority_ever={max_ever:.4f} "
-        f"(hard cap=1.0, desired cap=0.8), "
+        f"\n[INV-11/18] Constraint Erosion: max_authority_ever={max_ever:.4f} "
+        f"(hard cap=0.8), "
         f"final={_max_authority(A_final):.4f}"
     )
 

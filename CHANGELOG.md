@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`StateStore` abstraction** (`emergo/store.py`): pluggable persistence layer with
+  `SqliteStore` (WAL mode, BLOB checkpoints, JSON metadata, thread-safe) and `PickleStore`
+  (directory-per-run, file-per-checkpoint, index.json) backends; `make_store()` factory.
+- **`CheckpointKernelObserver`**: saves full kernel state every N accepted CEs and on
+  completion; enables resumable long-horizon runs with `emergo run --checkpoint-db`.
+- **Parallel kernel execution** (`emergo/distributed.py`): `run_parallel_kernels()` runs
+  independent `KernelConfig` instances across `multiprocessing.Pool` workers; `best_converged`,
+  `all_converged`, `summarize_results` selection helpers; `emergo run --workers N`.
+- **`AlertManager`** (`emergo/alerting.py`): `KernelObserver` that checks configurable
+  `AlertRule` instances each iteration with per-rule cooldown; four built-in rules:
+  `authority_monopoly_rule`, `convergence_stall_rule`, `high_rejection_rate_rule`,
+  `phi_loss_spike_rule`.
+- **Structured JSON logging** (`emergo/logging_config.py`): `JsonFormatter` emits
+  single-line ISO-8601 JSON log records; `configure_structured_logging()` and
+  `get_emergo_logger()` for log-aggregation-friendly output.
+- **`RateLimitedLuxBridge`** (`emergo/rate_limiting.py`): wraps any `LuxBridge` with a
+  per-agent token-bucket rate limiter (`max_proposals_per_second`, `burst_allowance`) and
+  blast-radius cap (`max_in_flight_per_agent`); `rate_limit_stats()`, `reset_rate_limits()`.
+- **`RateLimitConfig`**: typed dataclass for rate-limit and blast-radius parameters.
+- **Security documentation** (`docs/security.rst`): Lux auth model, rate limiting, audit
+  trail, authority invariants, capability governance, alerting, and production checklist.
+- **CLI `checkpoint` subcommands**: `emergo checkpoint list [--db PATH]` and
+  `emergo checkpoint load <ID> [--db PATH]` for browsing and resuming saved runs.
+- **Sparse graph support** (`emergo/sparse.py`): optional `scipy.sparse` integration;
+  `is_sparse_beneficial()`, `to_sparse_adjacency()`, `from_sparse_adjacency()`,
+  `sparse_graph_features()`, `estimate_memory_bytes()`; graceful fallback to dense numpy
+  when scipy is not installed.
+- **Benchmarking suite** (`tests/benchmarks/`): `bench_kernel.py` measures kernel
+  throughput and CE acceptance rate; `bench_features.py` compares dense vs sparse feature
+  extraction with memory savings estimates; both support `--quick` and `--json` flags.
+
+### Changed
+- **INV-11 (authority monopoly) enforced**: `authority_update` now hard-clips scores to
+  `[0.0, 0.8]` (was `[0.0, 1.0]`); `SAFETY_SPEC.md` updated to ENFORCED.
+- **INV-12 (self-loop guard) enforced**: `ce_execute` rejects `add_edge` CEs where
+  `participants[0] == participants[1]`; `SAFETY_SPEC.md` updated to ENFORCED.
+- **INV-17 (phi adaptation) enforced**: `emergo_kernel` accepts `phi_force_adapt_interval`
+  (default 1000); at those intervals φ is updated with early-stopping disabled so φ never
+  permanently freezes; `SAFETY_SPEC.md` updated to ENFORCED.
+- `pyproject.toml`: added optional `[monitoring]` (prometheus-client) and `[performance]`
+  (scipy) extras; `[all]` now bundles viz + otel + monitoring + performance.
+
+### Fixed
+- `phi_loss_spike_rule` computed baseline *including* the current spiked sample — fixed to
+  evaluate baseline from previous samples only.
+
 ## [0.2.0] - 2026-06-09
 
 ### Added

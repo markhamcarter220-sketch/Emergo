@@ -86,8 +86,18 @@ dev = [
     "sphinx-autodoc-typehints>=1.24",
 ]
 
+# Prometheus client (optional — enables push-gateway export)
+monitoring = [
+    "prometheus-client>=0.17",
+]
+
+# Sparse graph support (optional — enables scipy.sparse in emergo.sparse)
+performance = [
+    "scipy>=1.10",
+]
+
 # Convenience alias: everything except dev tooling
-all = ["emergo[viz,otel]"]
+all = ["emergo[viz,otel,monitoring,performance]"]
 
 # ---------------------------------------------------------------------------
 # CLI entry points

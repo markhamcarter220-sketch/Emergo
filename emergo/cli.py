@@ -57,6 +57,14 @@ demo_app = typer.Typer(
 )
 app.add_typer(demo_app, name="demo")
 
+checkpoint_app = typer.Typer(
+    name="checkpoint",
+    help="Manage kernel run checkpoints (requires emergo[store]).",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
+app.add_typer(checkpoint_app, name="checkpoint")
+
 
 # ---------------------------------------------------------------------------
 # Rich-powered progress observer  (INV-10 safe — exceptions never propagate)
@@ -192,22 +200,78 @@ def run(
     ),
     threshold: float = typer.Option(1e-4, "--threshold", help="Convergence plateau threshold"),
     phi_lr: float | None = typer.Option(None, "--phi-lr", help="φ learning rate override"),
+    workers: int = typer.Option(
+        1,
+        "--workers",
+        "-w",
+        help="Number of parallel kernel runs (>1 enables distributed mode)",
+    ),
+    checkpoint_db: Path | None = typer.Option(
+        None,
+        "--checkpoint-db",
+        help="SQLite path for auto-checkpointing (e.g. runs.db)",
+    ),
+    checkpoint_every: int = typer.Option(
+        100,
+        "--checkpoint-every",
+        help="Auto-checkpoint every N accepted CEs (requires --checkpoint-db)",
+    ),
 ) -> None:
     """Run the Emergo kernel loop on a ring graph.
 
     Config precedence: CLI flags > env vars
     (EMERGO_AGENTS, EMERGO_ITERATIONS, EMERGO_SEED, EMERGO_OUTPUT_DIR, EMERGO_OPTIMIZER)
     > defaults.
+
+    Use [bold]--workers N[/bold] to run N independent parallel kernels (different seeds)
+    and report the best result.  Use [bold]--checkpoint-db[/bold] to save checkpoints to
+    SQLite for long runs.
     """
     from emergo import HistoryObserver, emergo_kernel
+
+    if workers > 1:
+        _run_distributed(
+            agents=agents,
+            iterations=iterations,
+            seed=seed,
+            optimizer=optimizer,
+            threshold=threshold,
+            phi_lr=phi_lr,
+            workers=workers,
+        )
+        return
 
     G0, phi0, A0 = _build_ring(agents)
     obs = HistoryObserver()
     need_diag = collect_diagnostics or do_viz
+    run_observers: list[object] = [obs]
+
+    # Auto-checkpointing
+    if checkpoint_db is not None:
+        try:
+            import uuid
+
+            from emergo.store import CheckpointKernelObserver, make_store
+
+            run_id = f"run_{uuid.uuid4().hex[:8]}"
+            store = make_store("sqlite", db_path=str(checkpoint_db))
+            ckpt_obs = CheckpointKernelObserver(
+                store, run_id=run_id, every_n_accepted=checkpoint_every
+            )
+            run_observers.append(ckpt_obs)
+            console.print(
+                f"[dim]Checkpointing to {checkpoint_db} every {checkpoint_every} "
+                f"accepted CEs (run_id={run_id})[/dim]"
+            )
+        except ImportError:
+            console.print(
+                "[yellow]Warning: store module unavailable — skipping checkpointing[/yellow]"
+            )
 
     with _make_progress(iterations) as prog:
         tid = prog.add_task(f"[cyan]Running[/cyan]  {agents} agents", total=iterations)
         prog_obs = _RichProgressObserver(prog, tid, iterations)
+        run_observers.append(prog_obs)
 
         result = emergo_kernel(
             initial_state=(G0, phi0, A0, []),
@@ -215,7 +279,7 @@ def run(
             convergence_threshold=threshold,
             phi_optimizer=optimizer,
             phi_lr=phi_lr,
-            observers=[obs, prog_obs],
+            observers=run_observers,  # type: ignore[arg-type]
             collect_diagnostics=need_diag,
             rng=np.random.default_rng(seed),
         )
@@ -252,6 +316,171 @@ def run(
                     "[yellow]Warning: viz extra not installed. "
                     "Run: pip install 'emergo[viz]'[/yellow]"
                 )
+
+
+# ---------------------------------------------------------------------------
+# emergo run --workers helper (distributed mode)
+# ---------------------------------------------------------------------------
+
+
+def _run_distributed(
+    agents: int,
+    iterations: int,
+    seed: int,
+    optimizer: str,
+    threshold: float,
+    phi_lr: float | None,
+    workers: int,
+) -> None:
+    """Run N parallel kernel instances and report results."""
+    from emergo.distributed import KernelConfig, run_parallel_kernels
+
+    console.print(
+        f"[bold cyan]Distributed mode:[/bold cyan] {workers} workers x "
+        f"{agents} agents x {iterations} iterations"
+    )
+    G0, phi0, A0 = _build_ring(agents)
+    initial_state = (G0, phi0, A0, [])
+
+    configs = [
+        KernelConfig(
+            initial_state=initial_state,
+            max_iterations=iterations,
+            convergence_threshold=threshold,
+            phi_optimizer=optimizer,
+            phi_lr=phi_lr,
+            seed=seed + i,
+        )
+        for i in range(workers)
+    ]
+
+    with console.status("[cyan]Running parallel kernels…[/cyan]"):
+        results = run_parallel_kernels(configs, n_workers=workers)
+
+    table = Table(title=f"Parallel Results ({workers} workers)", header_style="bold magenta")
+    table.add_column("Seed", justify="right", style="dim")
+    table.add_column("Reason", style="cyan")
+    table.add_column("φ loss", justify="right")
+    table.add_column("Wall time", justify="right")
+    table.add_column("Error", style="red")
+
+    for r in results:
+        phi_str = f"{r.final_phi_loss:.5f}" if r.final_phi_loss is not None else "—"
+        wall_str = f"{r.wall_time_seconds:.2f}s"
+        err_str = r.error or ""
+        table.add_row(str(r.config.seed), r.reason, phi_str, wall_str, err_str)
+
+    console.print(table)
+
+    from emergo.distributed import best_converged, summarize_results
+
+    summary = summarize_results(results)
+    console.print(
+        f"\n  Converged: {summary['n_converged']}/{summary['n_total']}  |  "
+        f"Failed: {summary['n_failed']}  |  "
+        f"Best φ loss: {summary['best_phi_loss']:.5f if summary['best_phi_loss'] is not None else '—'}  |  "
+        f"Avg wall time: {summary['avg_wall_time']:.2f}s"
+    )
+    best = best_converged(results)
+    if best is not None:
+        _, _, A_best, _ = best.final_state
+        console.print(_authority_table(A_best, title=f"Best Run (seed={best.config.seed})"))
+
+
+# ---------------------------------------------------------------------------
+# emergo checkpoint list / load
+# ---------------------------------------------------------------------------
+
+
+@checkpoint_app.command("list")
+def checkpoint_list(
+    db: Path = typer.Option(
+        Path("runs.db"),
+        "--db",
+        help="SQLite database path",
+    ),
+) -> None:
+    """List all runs and checkpoint counts in a SQLite store."""
+    try:
+        from emergo.store import make_store
+    except ImportError as exc:
+        console.print("[red]Error: emergo.store not available[/red]")
+        raise typer.Exit(code=1) from exc
+
+    if not db.exists():
+        console.print(f"[yellow]No database found at {db}[/yellow]")
+        raise typer.Exit(code=0)
+
+    store = make_store("sqlite", db_path=str(db))
+    runs = store.list_runs()
+    store.close()
+
+    if not runs:
+        console.print("[dim]No runs found.[/dim]")
+        return
+
+    table = Table(title=f"Runs in {db}", header_style="bold magenta")
+    table.add_column("Run ID", style="cyan")
+    table.add_column("Created", style="dim")
+    table.add_column("Updated", style="dim")
+    table.add_column("Checkpoints", justify="right")
+
+    for r in runs:
+        table.add_row(r.run_id, r.created_at[:19], r.updated_at[:19], str(r.n_checkpoints))
+    console.print(table)
+
+
+@checkpoint_app.command("load")
+def checkpoint_load(
+    checkpoint_id: str = typer.Argument(..., help="Checkpoint ID to load"),
+    db: Path = typer.Option(Path("runs.db"), "--db", help="SQLite database path"),
+    iterations: int = typer.Option(
+        0,
+        "--continue-iterations",
+        "-i",
+        help="Continue kernel for N more iterations after loading (0 = just inspect)",
+    ),
+    seed: int = typer.Option(0, "--seed"),
+) -> None:
+    """Load a checkpoint and optionally continue the kernel run."""
+    try:
+        from emergo.store import make_store
+    except ImportError as exc:
+        console.print("[red]Error: emergo.store not available[/red]")
+        raise typer.Exit(code=1) from exc
+
+    store = make_store("sqlite", db_path=str(db))
+    try:
+        state, meta = store.load(checkpoint_id)
+    except KeyError as exc:
+        console.print(f"[red]Checkpoint {checkpoint_id!r} not found in {db}[/red]")
+        raise typer.Exit(code=1) from exc
+    finally:
+        store.close()
+
+    _, _, A_loaded, _ = state
+    console.print(
+        f"[bold]Loaded checkpoint[/bold] {meta.checkpoint_id[:12]}…  "
+        f"(run={meta.run_id}, iteration={meta.iteration}, reason={meta.reason or '—'})"
+    )
+    console.print(_authority_table(A_loaded, title="Authority at Checkpoint"))
+
+    if iterations > 0:
+        from emergo import HistoryObserver, emergo_kernel
+
+        obs = HistoryObserver()
+        with _make_progress(iterations) as prog:
+            tid = prog.add_task("[cyan]Continuing[/cyan]", total=iterations)
+            result = emergo_kernel(
+                initial_state=state,
+                max_iterations=iterations,
+                observers=[obs, _RichProgressObserver(prog, tid, iterations)],
+                rng=np.random.default_rng(seed),
+            )
+        final_state, reason = result  # type: ignore[misc]
+        _, _, A_final, _ = final_state
+        console.print(_summary_panel(reason, A_final.scores.__len__(), iterations, obs))
+        console.print(_authority_table(A_final, title="Authority After Continuation"))
 
 
 # ---------------------------------------------------------------------------

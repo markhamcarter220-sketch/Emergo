@@ -1,0 +1,227 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+# ---------------------------------------------------------------------------
+# Project metadata  (PEP 621)
+# ---------------------------------------------------------------------------
+
+[project]
+name = "emergo"
+version = "0.1.0"
+description = "A self-organizing intelligence engine where agents earn authority by predicting network topology changes."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "Emergo Contributors" }]
+keywords = [
+    "multi-agent",
+    "self-organization",
+    "authority",
+    "graph-dynamics",
+    "reinforcement-learning",
+    "emergent-intelligence",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+
+# Core dependency: only numpy.  All other dependencies are optional so that
+# emergo can be imported in constrained environments (CI, embedded, etc.).
+dependencies = ["numpy>=1.24"]
+
+# ---------------------------------------------------------------------------
+# Optional dependency groups
+# ---------------------------------------------------------------------------
+
+[project.optional-dependencies]
+
+# Visualization — enables emergo.visualize plot/dashboard functions
+viz = [
+    "matplotlib>=3.5",
+    "networkx>=3.0",
+]
+
+# OpenTelemetry export — enables MetricsObserver.enable_otel() / flush_otel()
+otel = [
+    "opentelemetry-sdk>=1.20",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.20",
+]
+
+# Development toolchain
+dev = [
+    # Testing
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "hypothesis>=6.88",
+    # Linting / formatting
+    "ruff>=0.4",
+    "black>=24.3",
+    # Type checking
+    "mypy>=1.8",
+    # Convenience: install viz extras too for example scripts
+    "matplotlib>=3.5",
+    "networkx>=3.0",
+]
+
+# Convenience alias: everything except dev tooling
+all = ["emergo[viz,otel]"]
+
+# ---------------------------------------------------------------------------
+# CLI entry points
+# ---------------------------------------------------------------------------
+
+[project.scripts]
+# emergo-demo   — quick 5-agent convergence run; verifies installation is good
+# emergo-kernel — full-featured run with options (mirrors convergence_demo.py)
+# emergo-health — run kernel + print health-check report
+emergo-demo   = "emergo.cli:demo"
+emergo-kernel = "emergo.cli:run_kernel"
+emergo-health = "emergo.cli:health_check"
+
+# ---------------------------------------------------------------------------
+# Project URLs
+# ---------------------------------------------------------------------------
+
+[project.urls]
+Homepage   = "https://github.com/markhamcarter220-sketch/Emergo"
+Repository = "https://github.com/markhamcarter220-sketch/Emergo"
+Issues     = "https://github.com/markhamcarter220-sketch/Emergo/issues"
+Changelog  = "https://github.com/markhamcarter220-sketch/Emergo/blob/main/CHANGELOG.md"
+
+# ---------------------------------------------------------------------------
+# Hatchling build configuration
+# ---------------------------------------------------------------------------
+
+[tool.hatch.build.targets.wheel]
+# Only ship the emergo/ package; tests/ and examples/ are excluded from wheels.
+packages = ["emergo"]
+
+[tool.hatch.build.targets.sdist]
+# Source distributions include everything useful for development.
+include = [
+    "emergo/",
+    "tests/",
+    "examples/",
+    "README.md",
+    "CONTRIBUTING.md",
+    "CONVERGENCE_ANALYSIS.md",
+    "SPECIFICATION.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths   = ["tests"]
+addopts     = "-ra -q --tb=short"
+# Silence verbose hypothesis output unless running -v
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+# ---------------------------------------------------------------------------
+# Coverage (pytest-cov)
+# ---------------------------------------------------------------------------
+
+[tool.coverage.run]
+source   = ["emergo"]
+omit     = ["emergo/cli.py"]   # CLI wrappers don't need coverage
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]
+show_missing = true
+
+# ---------------------------------------------------------------------------
+# Ruff (linter + import sorter)
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+target-version = "py39"
+line-length    = 100
+src            = ["emergo", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "ANN", # flake8-annotations (type hints)
+    "RUF", # ruff-specific rules
+]
+ignore = [
+    "ANN101",  # missing type annotation for self
+    "ANN102",  # missing type annotation for cls
+    "ANN401",  # Any is fine in a few places
+    "E501",    # line too long — black handles this
+    "B008",    # function call in default arg (numpy defaults are intentional)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests and examples are less strict about annotations
+"tests/*"    = ["ANN", "N802"]
+"examples/*" = ["ANN", "N802", "N803", "T201"]  # T201 = print statements
+
+[tool.ruff.lint.isort]
+known-first-party = ["emergo"]
+force-sort-within-sections = true
+
+# ---------------------------------------------------------------------------
+# Black (formatter)
+# ---------------------------------------------------------------------------
+
+[tool.black]
+line-length    = 100
+target-version = ["py39", "py310", "py311"]
+include        = '\.(py)$'
+
+# ---------------------------------------------------------------------------
+# Mypy (static type checker)
+# ---------------------------------------------------------------------------
+
+[tool.mypy]
+python_version          = "3.9"
+strict                  = false           # relax for first pass; tighten gradually
+warn_return_any         = true
+warn_unused_configs     = true
+warn_unused_ignores     = true
+disallow_untyped_defs   = true
+disallow_incomplete_defs = true
+check_untyped_defs      = true
+no_implicit_optional    = true
+show_error_codes        = true
+pretty                  = true
+
+[[tool.mypy.overrides]]
+# numpy stubs may not be installed; ignore missing imports there
+module = ["numpy.*", "matplotlib.*", "networkx.*", "opentelemetry.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Tests — allow Any and looser typing
+module = ["tests.*"]
+disallow_untyped_defs = false

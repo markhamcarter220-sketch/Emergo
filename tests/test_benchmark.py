@@ -167,3 +167,119 @@ def test_diagnostics_at_scale(n_agents):
     assert diag is not None
     assert len(diag.agent_ids) == n_agents
     assert isinstance(diag.records, list)
+
+
+# ---------------------------------------------------------------------------
+# Extended performance benchmarks: 50/100-agent wall-time, phi scaling
+# ---------------------------------------------------------------------------
+
+class TestPerformanceBenchmarks:
+    """Performance benchmarks for larger agent counts and phi_update scaling."""
+
+    def test_50_agent_wall_time(self):
+        """50 agents, 200 iters. Must complete in < 30s."""
+        state = _make_state(50, seed=600)
+        t0 = time.time()
+        emergo_kernel(
+            state,
+            max_iterations=200,
+            rng=np.random.default_rng(600),
+        )
+        elapsed = time.time() - t0
+        assert elapsed < 30.0, (
+            f"50-agent/200-iter kernel took {elapsed:.1f}s > 30s limit"
+        )
+
+    def test_100_agent_wall_time(self):
+        """100 agents, 100 iters. Must complete in < 30s."""
+        state = _make_state(100, seed=700)
+        t0 = time.time()
+        emergo_kernel(
+            state,
+            max_iterations=100,
+            rng=np.random.default_rng(700),
+        )
+        elapsed = time.time() - t0
+        assert elapsed < 30.0, (
+            f"100-agent/100-iter kernel took {elapsed:.1f}s > 30s limit"
+        )
+
+    def test_phi_update_scales(self):
+        """Run phi_update 3 times with increasing history sizes (10, 50, 200).
+
+        Assert each call completes in < 5s. Verifies phi_update doesn't blow up.
+        """
+        from emergo.phi_update import phi_update
+        from emergo import CoordinationEvent
+
+        rng = np.random.default_rng(800)
+        n = 10
+        base_state = _make_state(n, seed=800)
+        G0, phi0, _, _ = base_state
+
+        for history_size in [10, 50, 200]:
+            # Build synthetic g_history and ce_history
+            g_history = [G0] * (history_size + 1)
+            ce_history = [
+                CoordinationEvent(
+                    event_type="add_edge",
+                    participants=(f"agent{i % n}", f"agent{(i + 1) % n}"),
+                    params=frozenset([("weight", 0.5)]),
+                )
+                for i in range(history_size)
+            ]
+            # Build synthetic error history
+            from emergo.types import Errors
+            e_history = [
+                Errors(per_agent={f"agent{j}": float(rng.random()) for j in range(n)})
+                for _ in range(history_size)
+            ]
+
+            t0 = time.time()
+            phi_next, loss = phi_update(
+                phi0,
+                g_history,
+                ce_history,
+                e_history,
+            )
+            elapsed = time.time() - t0
+            assert elapsed < 5.0, (
+                f"phi_update with history_size={history_size} took {elapsed:.2f}s > 5s"
+            )
+            assert phi_next is not None
+
+    def test_memory_phi_not_growing_between_batches(self):
+        """Run kernel twice with E_history=[] reset between (simulating batch mode).
+
+        Assert the second run's phi Frobenius norm is not more than 10x the first,
+        meaning no unbounded accumulation.
+        """
+        n = 10
+        state1 = _make_state(n, seed=900)
+        state2 = _make_state(n, seed=900)  # same initial state
+
+        final_state1, _ = emergo_kernel(
+            state1,
+            max_iterations=100,
+            rng=np.random.default_rng(900),
+        )
+        _, phi1, _, _ = final_state1
+        frob1 = float(np.linalg.norm(phi1.W_phi, "fro"))
+
+        # Reset E_history (batch mode simulation)
+        G1, _, A1, _ = final_state1
+        state2_reset = (G1, phi1, A1, [])  # E_history reset to empty
+
+        final_state2, _ = emergo_kernel(
+            state2_reset,
+            max_iterations=100,
+            rng=np.random.default_rng(900),
+        )
+        _, phi2, _, _ = final_state2
+        frob2 = float(np.linalg.norm(phi2.W_phi, "fro"))
+
+        # Second run should not accumulate unboundedly
+        assert frob2 < max(frob1 * 10.0, 1.0), (
+            f"phi Frobenius norm grew excessively between batches: "
+            f"run1={frob1:.4f}, run2={frob2:.4f}"
+        )

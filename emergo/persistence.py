@@ -14,12 +14,12 @@ Usage::
     state2 = load_state("run_checkpoint.pkl")
     G2, phi2, A2, E2 = state2
 """
+
 from __future__ import annotations
 
 import json
-import pickle
 from pathlib import Path
-from typing import Union
+import pickle
 
 import numpy as np
 
@@ -28,7 +28,7 @@ from emergo.types import Authority, Errors, Graph, PhiMap, State
 
 def save_state(
     state: State,
-    path: Union[str, Path],
+    path: str | Path,
     *,
     format: str = "pickle",
 ) -> Path:
@@ -61,7 +61,7 @@ def save_state(
     return path
 
 
-def load_state(path: Union[str, Path]) -> State:
+def load_state(path: str | Path) -> State:
     """Load a kernel state tuple from disk.
 
     Automatically detects format from file extension (.pkl → pickle, .json → json).
@@ -81,7 +81,7 @@ def load_state(path: Union[str, Path]) -> State:
         raise FileNotFoundError(f"State file not found: {path}")
     if path.suffix == ".pkl":
         with open(path, "rb") as f:
-            return pickle.load(f)  # noqa: S301 — trusted internal format
+            return pickle.load(f)
     elif path.suffix == ".json":
         with open(path) as f:
             data = json.load(f)
@@ -93,6 +93,7 @@ def load_state(path: Union[str, Path]) -> State:
 # ---------------------------------------------------------------------------
 # JSON helpers
 # ---------------------------------------------------------------------------
+
 
 def _state_to_dict(state: State) -> dict:
     G, phi, A, E = state
@@ -115,9 +116,7 @@ def _state_to_dict(state: State) -> dict:
             "scores": dict(A.scores),
             "baseline": A.baseline,
         },
-        "errors": [
-            {"per_agent": dict(e.per_agent)} for e in E
-        ],
+        "errors": [{"per_agent": dict(e.per_agent)} for e in E],
     }
 
 

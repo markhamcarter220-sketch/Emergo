@@ -37,9 +37,13 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-# Core dependency: only numpy.  All other dependencies are optional so that
-# emergo can be imported in constrained environments (CI, embedded, etc.).
-dependencies = ["numpy>=1.24"]
+# Core runtime dependencies.  typer[all] bundles rich + click; both are
+# required for the `emergo` CLI that ships with the package.
+dependencies = [
+    "numpy>=1.24",
+    "typer>=0.9",   # rich and shellingham bundled in typer>=0.12
+    "rich>=13.0",
+]
 
 # ---------------------------------------------------------------------------
 # Optional dependency groups
@@ -70,6 +74,9 @@ dev = [
     "black>=24.3",
     # Type checking
     "mypy>=1.8",
+    # CLI (already in main deps, listed here for clarity)
+    "typer>=0.9",
+    "rich>=13.0",
     # Convenience: install viz extras too for example scripts
     "matplotlib>=3.5",
     "networkx>=3.0",
@@ -83,12 +90,12 @@ all = ["emergo[viz,otel]"]
 # ---------------------------------------------------------------------------
 
 [project.scripts]
-# emergo-demo   — quick 5-agent convergence run; verifies installation is good
-# emergo-kernel — full-featured run with options (mirrors convergence_demo.py)
-# emergo-health — run kernel + print health-check report
-emergo-demo   = "emergo.cli:demo"
-emergo-kernel = "emergo.cli:run_kernel"
-emergo-health = "emergo.cli:health_check"
+# Primary command: full Typer + Rich CLI
+emergo        = "emergo.cli:main"
+# Legacy aliases kept for backwards compatibility
+emergo-demo   = "emergo.cli:_legacy_demo"
+emergo-kernel = "emergo.cli:_legacy_kernel"
+emergo-health = "emergo.cli:_legacy_health"
 
 # ---------------------------------------------------------------------------
 # Project URLs

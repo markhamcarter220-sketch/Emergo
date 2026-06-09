@@ -27,7 +27,7 @@ pip install "emergo[dev,viz]"              # everything for development
 > git clone https://github.com/markhamcarter220-sketch/Emergo.git
 > cd Emergo
 > pip install -e ".[dev,viz]"
-> emergo-demo          # verify installation
+> emergo demo convergence   # verify installation
 > ```
 
 ### Quickstart
@@ -78,12 +78,39 @@ CE acceptance: 64.3%
   ...
 ```
 
-### CLI commands (installed with the package)
+### CLI (installed with the package)
 
 ```bash
-emergo-demo                            # 5-agent smoke-test
-emergo-kernel --agents 8 --iterations 1000 --optimizer adam
-emergo-health --agents 5 --iterations 200   # prints 8-detector health report
+# Run the kernel loop
+emergo run                                      # 8 agents, 2000 iterations
+emergo run --agents 12 --iterations 5000 --optimizer adam
+emergo run --agents 8 --viz --output-dir ./out  # run + save plots
+emergo run --collect-diagnostics -o ./diag      # save pickle for later viz
+
+# Visualizations
+emergo viz                                      # fresh 5-agent run → plots
+emergo viz --input ./diag/emergo_run.pkl        # load saved diagnostics
+
+# Health check (8 failure detectors)
+emergo health --agents 10 --iterations 300
+
+# Showcase demos
+emergo demo convergence                         # authority + φ loss evolution
+emergo demo multi-agent --rounds 6              # Lux-serialized coordination
+emergo demo executor                            # DependencyPlanner pipeline
+emergo demo stress --agents 20                  # large graph + detector report
+
+# Help
+emergo --help
+emergo run --help
+emergo demo --help
+```
+
+Environment variables mirror every flag: `EMERGO_AGENTS`, `EMERGO_ITERATIONS`,
+`EMERGO_SEED`, `EMERGO_OUTPUT_DIR`, `EMERGO_OPTIMIZER`.
+
+```bash
+EMERGO_AGENTS=16 EMERGO_OPTIMIZER=adam emergo run
 ```
 
 ---

@@ -81,7 +81,7 @@ def load_state(path: str | Path) -> State:
         raise FileNotFoundError(f"State file not found: {path}")
     if path.suffix == ".pkl":
         with open(path, "rb") as f:
-            return pickle.load(f)
+            return pickle.load(f)  # type: ignore[no-any-return]
     elif path.suffix == ".json":
         with open(path) as f:
             data = json.load(f)

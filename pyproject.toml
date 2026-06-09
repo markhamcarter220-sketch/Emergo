@@ -80,6 +80,9 @@ dev = [
     # Convenience: install viz extras too for example scripts
     "matplotlib>=3.5",
     "networkx>=3.0",
+    # Documentation
+    "sphinx>=7.0",
+    "sphinx-autodoc-typehints>=1.24",
 ]
 
 # Convenience alias: everything except dev tooling
@@ -102,10 +105,11 @@ emergo-health = "emergo.cli:_legacy_health"
 # ---------------------------------------------------------------------------
 
 [project.urls]
-Homepage   = "https://github.com/markhamcarter220-sketch/Emergo"
-Repository = "https://github.com/markhamcarter220-sketch/Emergo"
-Issues     = "https://github.com/markhamcarter220-sketch/Emergo/issues"
-Changelog  = "https://github.com/markhamcarter220-sketch/Emergo/blob/main/CHANGELOG.md"
+Homepage      = "https://github.com/markhamcarter220-sketch/Emergo"
+Repository    = "https://github.com/markhamcarter220-sketch/Emergo"
+Issues        = "https://github.com/markhamcarter220-sketch/Emergo/issues"
+Changelog     = "https://github.com/markhamcarter220-sketch/Emergo/blob/main/CHANGELOG.md"
+Documentation = "https://emergo.readthedocs.io"
 
 # ---------------------------------------------------------------------------
 # Hatchling build configuration
@@ -121,6 +125,7 @@ include = [
     "emergo/",
     "tests/",
     "examples/",
+    "docs/",
     "README.md",
     "CONTRIBUTING.md",
     "CONVERGENCE_ANALYSIS.md",

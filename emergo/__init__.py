@@ -38,6 +38,9 @@ Public surface:
     detect_authority_collapse, detect_topology_lock_in, detect_phi_gaming,
     detect_speculative_cascades, detect_lux_bottleneck, detect_clique_formation,
     detect_credit_assignment_ambiguity, detect_emergent_conservatism
+
+  Persistence:
+    save_state, load_state
 """
 
 from emergo.types import (
@@ -74,6 +77,7 @@ from emergo.proposal import (
     WeightedMixGenerator,
 )
 from emergo.metrics import MetricsObserver
+from emergo.persistence import save_state, load_state
 from emergo.diagnostics import (
     KernelDiagnostics,
     IterationRecord,
@@ -113,6 +117,8 @@ __all__ = [
     "SequenceProposalGenerator", "WeightedMixGenerator",
     # metrics / telemetry
     "MetricsObserver",
+    # persistence
+    "save_state", "load_state",
     # diagnostics
     "KernelDiagnostics", "IterationRecord", "DetectorResult", "run_health_check",
     "detect_authority_collapse", "detect_topology_lock_in", "detect_phi_gaming",

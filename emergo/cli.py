@@ -279,7 +279,7 @@ def run(
             convergence_threshold=threshold,
             phi_optimizer=optimizer,
             phi_lr=phi_lr,
-            observers=run_observers,  # type: ignore[arg-type]
+            observers=run_observers,
             collect_diagnostics=need_diag,
             rng=np.random.default_rng(seed),
         )
@@ -334,13 +334,14 @@ def _run_distributed(
 ) -> None:
     """Run N parallel kernel instances and report results."""
     from emergo.distributed import KernelConfig, run_parallel_kernels
+    from emergo.types import State
 
     console.print(
         f"[bold cyan]Distributed mode:[/bold cyan] {workers} workers x "
         f"{agents} agents x {iterations} iterations"
     )
     G0, phi0, A0 = _build_ring(agents)
-    initial_state = (G0, phi0, A0, [])
+    initial_state: State = (G0, phi0, A0, [])
 
     configs = [
         KernelConfig(

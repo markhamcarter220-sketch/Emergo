@@ -33,8 +33,8 @@ from emergo.types import Graph
 _SCIPY_AVAILABLE: bool = False
 
 try:
-    import scipy.sparse as _sp  # type: ignore[import-untyped]
-    import scipy.sparse.linalg as _spl  # type: ignore[import-untyped]
+    import scipy.sparse as _sp
+    import scipy.sparse.linalg as _spl
 
     _SCIPY_AVAILABLE = True
 except ImportError:

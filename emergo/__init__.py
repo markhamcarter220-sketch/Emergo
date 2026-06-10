@@ -120,6 +120,7 @@ from emergo.proposal import (
     WeightedMixGenerator,
 )
 from emergo.rate_limiting import RateLimitConfig, RateLimitedLuxBridge
+from emergo.serde import load_checkpoint, save_checkpoint
 from emergo.sparse import (
     estimate_memory_bytes,
     from_sparse_adjacency,
@@ -228,6 +229,7 @@ __all__ = [  # noqa: RUF022
     "get_emergo_logger",
     "high_rejection_rate_rule",
     "JsonFormatter",
+    "load_checkpoint",
     "load_state",
     "make_initial_authority",
     "make_initial_phi",
@@ -237,6 +239,7 @@ __all__ = [  # noqa: RUF022
     "phi_update",
     "run_health_check",
     "run_parallel_kernels",
+    "save_checkpoint",
     "save_state",
     # store / persistence
     "CheckpointKernelObserver",

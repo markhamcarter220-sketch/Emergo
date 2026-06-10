@@ -8,7 +8,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "emergo"
-version = "0.2.0"
+version = "0.3.0"
 description = "A self-organizing intelligence engine where agents earn authority by predicting network topology changes."
 readme = "README.md"
 license = { text = "MIT" }

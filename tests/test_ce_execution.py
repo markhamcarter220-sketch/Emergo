@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from emergo.ce_execution import ce_execute
+from emergo.kernel import make_initial_authority
 from tests.conftest import make_ce
 
 
@@ -126,3 +127,58 @@ class TestSelfLoopRejection:
         G_next, ok, _ = ce_execute(three_agent_graph, ce, lux, default_authority)
         assert ok is False
         np.testing.assert_array_equal(G_next.adjacency, original_adj)
+
+
+class TestGovernanceGuards:
+    """Tests for Critical 1.2 governance fixes."""
+
+    def test_remove_high_authority_agent_blocked(self, three_agent_graph, lux):
+        """High-authority agent (>0.5) cannot be removed."""
+        A = make_initial_authority(three_agent_graph.agent_ids, baseline=0.5)
+        A.set("A", 0.7)  # A is high-authority
+        ce = make_ce("remove_agent", ("A",))
+        G_next, ok, _ = ce_execute(three_agent_graph, ce, lux, A)
+        assert ok is False
+        assert G_next is three_agent_graph
+
+    def test_remove_low_authority_agent_allowed(self, three_agent_graph, lux):
+        """Low-authority agent (<=0.5) can be removed normally."""
+        A = make_initial_authority(three_agent_graph.agent_ids, baseline=0.5)
+        A.set("A", 0.3)  # A is low-authority
+        ce = make_ce("remove_agent", ("A",))
+        G_next, ok, _ = ce_execute(three_agent_graph, ce, lux, A)
+        assert ok is True
+        assert "A" not in G_next.agent_ids
+
+    def test_add_agent_blocked_when_at_max(self, three_agent_graph, lux):
+        """add_agent CE rejected when graph already has max_agents agents."""
+        A = make_initial_authority(three_agent_graph.agent_ids, baseline=0.5)
+        # three_agent_graph has 3 agents; set max_agents=3 to block addition
+        ce = make_ce("add_agent", ("A",), agent_id="D", max_agents=3)
+        G_next, ok, _ = ce_execute(three_agent_graph, ce, lux, A)
+        assert ok is False
+        assert G_next is three_agent_graph
+
+    def test_add_agent_allowed_below_max(self, three_agent_graph, lux):
+        """add_agent CE succeeds when below cap."""
+        A = make_initial_authority(three_agent_graph.agent_ids, baseline=0.5)
+        ce = make_ce("add_agent", ("A",), agent_id="D", max_agents=10)
+        G_next, ok, _ = ce_execute(three_agent_graph, ce, lux, A)
+        assert ok is True
+        assert G_next.n_agents == 4
+
+    def test_remove_agent_at_threshold_blocked(self, three_agent_graph, lux):
+        """Authority exactly at threshold (>0.5) is protected."""
+        A = make_initial_authority(three_agent_graph.agent_ids, baseline=0.5)
+        A.set("B", 0.51)
+        ce = make_ce("remove_agent", ("B",))
+        _g_next, ok, _ = ce_execute(three_agent_graph, ce, lux, A)
+        assert ok is False
+
+    def test_remove_agent_exactly_at_threshold_allowed(self, three_agent_graph, lux):
+        """Authority exactly at 0.5 (not > threshold) can be removed."""
+        A = make_initial_authority(three_agent_graph.agent_ids, baseline=0.5)
+        # A.get("B") == 0.5 which is NOT > 0.5
+        ce = make_ce("remove_agent", ("B",))
+        _g_next, ok, _ = ce_execute(three_agent_graph, ce, lux, A)
+        assert ok is True

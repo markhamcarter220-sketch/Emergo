@@ -42,6 +42,11 @@ Public surface:
 
   Persistence:
     save_state, load_state
+    CheckpointKernelObserver, CheckpointMeta, StateStore, SqliteStore, PickleStore, RunInfo
+
+  Sparse graph utilities:
+    is_sparse_beneficial, to_sparse_adjacency, from_sparse_adjacency,
+    sparse_graph_features, estimate_memory_bytes
 
   Distributed execution:
     run_parallel_kernels, KernelConfig, KernelResult

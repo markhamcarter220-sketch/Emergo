@@ -127,6 +127,14 @@ def emergo_kernel(
 
     state = initial_state
 
+    # EMA error scale for authority normalization (Critical 1.1).
+    # alpha=0.01 gives a ~100-step window; None until first accepted CE.
+    _EMA_ALPHA: float = 0.01
+    _error_ema: float | None = None
+
+    # Phi-loss history for convergence signal 2 (Critical 1.3).
+    _phi_losses: list[float] = []
+
     # Diagnostics setup
     if collect_diagnostics:
         from emergo.diagnostics import IterationRecord, KernelDiagnostics
@@ -169,8 +177,15 @@ def emergo_kernel(
         # Step 2: ErrorComputation — pure function over current φ
         errors = error_computation(G_t, G_next, phi_t, CE_t)
 
+        # Update EMA error scale before authority update (Critical 1.1).
+        cur_mean = errors.mean_error()
+        if _error_ema is None:
+            _error_ema = cur_mean
+        else:
+            _error_ema = (1.0 - _EMA_ALPHA) * _error_ema + _EMA_ALPHA * cur_mean
+
         # Step 3: AuthorityUpdate — deterministic from errors
-        A_next = authority_update(A_t, errors)
+        A_next = authority_update(A_t, errors, error_scale=_error_ema)
 
         # Accumulate history for φ fitting
         g_history.append(G_next)
@@ -193,6 +208,7 @@ def emergo_kernel(
                 force_adapt=force_adapt,
             )
             if phi_loss_value is not None:
+                _phi_losses.append(phi_loss_value)
                 fire_observers(_observers, "on_phi_updated", t, phi_loss_value)
         else:
             phi_next = phi_t
@@ -228,7 +244,7 @@ def emergo_kernel(
         state = (G_next, phi_next, A_next, E_next)
         G_t, phi_t, A_t, E_history = state
 
-        if _converged(E_history, threshold=convergence_threshold):
+        if _converged(E_history, threshold=convergence_threshold, phi_losses=_phi_losses):
             fire_observers(_observers, "on_kernel_done", "Converged", state, t + 1)
             if collect_diagnostics:
                 return (
@@ -263,10 +279,28 @@ def _converged(
     error_history: list[Errors],
     threshold: float,
     window: int = 5,
+    phi_losses: list[float] | None = None,
+    phi_loss_patience: int = 10,
 ) -> bool:
-    """Return True when mean φ-error has plateaued across two consecutive windows."""
-    if len(error_history) < window * 2:
-        return False
-    recent = np.mean([e.mean_error() for e in error_history[-window:]])
-    prev = np.mean([e.mean_error() for e in error_history[-2 * window : -window]])
-    return float(abs(recent - prev)) < threshold
+    """Return True when either convergence signal fires (Critical 1.3).
+
+    Signal 1 — structural error plateau: mean error across two consecutive
+    windows of `window` steps differs by less than `threshold`.
+
+    Signal 2 — φ-loss plateau: the range of the last `phi_loss_patience`
+    phi-loss values is below `threshold` (φ has stopped learning).
+    """
+    # Signal 1: structural error plateau
+    if len(error_history) >= window * 2:
+        recent = np.mean([e.mean_error() for e in error_history[-window:]])
+        prev = np.mean([e.mean_error() for e in error_history[-2 * window : -window]])
+        if float(abs(recent - prev)) < threshold:
+            return True
+
+    # Signal 2: phi-loss plateau
+    if phi_losses and len(phi_losses) >= phi_loss_patience:
+        recent_losses = phi_losses[-phi_loss_patience:]
+        if (max(recent_losses) - min(recent_losses)) < threshold:
+            return True
+
+    return False

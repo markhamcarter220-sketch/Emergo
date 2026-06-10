@@ -20,6 +20,9 @@ import numpy as np
 from emergo.lux import Lux
 from emergo.types import Authority, CoordinationEvent, Graph
 
+_HIGH_AUTH_REMOVE_THRESHOLD: float = 0.5  # protect agents above this level from removal
+_MAX_AGENTS_DEFAULT: int = 100  # cap graph growth; override via CE param "max_agents"
+
 
 def ce_execute(
     G_t: Graph,
@@ -36,6 +39,18 @@ def ce_execute(
     """
     if not lux.authorize(CE, G_t, A_t):
         return G_t, False, ()
+
+    # Governance guard: protect high-authority agents from removal.
+    if CE.event_type == "remove_agent" and CE.participants:
+        target = CE.participants[0]
+        if A_t.get(target) > _HIGH_AUTH_REMOVE_THRESHOLD:
+            return G_t, False, ()
+
+    # Governance guard: cap graph size to prevent unbounded growth.
+    if CE.event_type == "add_agent":
+        max_agents = int(dict(CE.params).get("max_agents", _MAX_AGENTS_DEFAULT))
+        if G_t.n_agents >= max_agents:
+            return G_t, False, ()
 
     try:
         G_next = _apply(G_t, CE, dict(CE.params))

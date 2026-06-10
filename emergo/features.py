@@ -14,9 +14,21 @@ Handles any n_agents ≥ 0, including dynamic topology changes mid-run.
 
 from __future__ import annotations
 
+import functools
+
 import numpy as np
 
 from emergo.types import CoordinationEvent, Graph
+
+
+@functools.lru_cache(maxsize=256)
+def _cached_spectral(adj_bytes: bytes, n: int) -> tuple[tuple, float]:
+    """Cache eigvalsh results keyed by adjacency bytes (immutable Graph guarantee)."""
+    adj = np.frombuffer(adj_bytes, dtype=float).reshape(n, n)
+    sym_adj = (adj + adj.T) / 2.0
+    all_eigs = np.linalg.eigvalsh(sym_adj)[::-1]  # descending
+    max_abs = float(np.abs(all_eigs).max())
+    return tuple(all_eigs.tolist()), max_abs
 
 _EVENT_TYPE_INDEX: dict[str, int] = {
     # Graph-mutation CEs (handled by ce_execute)
@@ -59,10 +71,8 @@ def extract_graph_features(G: Graph, d_features: int) -> np.ndarray:
     all_eigs: np.ndarray = np.zeros(0)
 
     if n > 0:
-        sym_adj = (G.adjacency + G.adjacency.T) / 2.0
-        all_eigs = np.linalg.eigvalsh(sym_adj)  # ascending
-        all_eigs = all_eigs[::-1]  # descending (largest first)
-        max_abs = float(np.abs(all_eigs).max())
+        eigs_tuple, max_abs = _cached_spectral(G.adjacency.tobytes(), n)
+        all_eigs = np.array(eigs_tuple)
         if max_abs > 1e-12:
             norm_eigs = all_eigs / max_abs
         else:

@@ -81,6 +81,7 @@ def emergo_kernel(
     phi_grad_clip: float = 1.0,
     phi_early_stop_patience: int = 5,
     phi_force_adapt_interval: int = 1000,
+    phi_window: int = 200,
 ) -> tuple[State, str] | tuple[State, str, KernelDiagnostics]:
     """Run the fixed-point loop until convergence or max_iterations.
 
@@ -104,6 +105,9 @@ def emergo_kernel(
       phi_early_stop_patience: Early-stopping patience for phi_update (0 = disabled).
       phi_force_adapt_interval: Every this many iterations, bypass early stopping to
                                 prevent stalled φ adaptation (INV-17).  Default 1000.
+      phi_window:               Sliding window passed to phi_update: only the most recent
+                                phi_window transitions are used for training.  0 = no limit.
+                                Default 200 (bounds O(T) training cost).
 
     Returns:
       - (final_state, reason) when collect_diagnostics=False (default)
@@ -223,6 +227,7 @@ def emergo_kernel(
                 optimizer=phi_optimizer,
                 early_stop_patience=phi_early_stop_patience if not force_adapt else 0,
                 force_adapt=force_adapt,
+                phi_window=phi_window,
             )
             if phi_loss_value is not None:
                 _phi_losses.append(phi_loss_value)

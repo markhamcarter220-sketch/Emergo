@@ -160,8 +160,9 @@ class TestGovernanceGuards:
         assert G_next is three_agent_graph
 
     def test_add_agent_allowed_below_max(self, three_agent_graph, lux):
-        """add_agent CE succeeds when below cap."""
+        """add_agent CE succeeds when below cap and proposer authority >= R5 threshold."""
         A = make_initial_authority(three_agent_graph.agent_ids, baseline=0.5)
+        A.set("A", 0.7)  # meet R5 proposer authority threshold (>= 0.6)
         ce = make_ce("add_agent", ("A",), agent_id="D", max_agents=10)
         G_next, ok, _ = ce_execute(three_agent_graph, ce, lux, A)
         assert ok is True

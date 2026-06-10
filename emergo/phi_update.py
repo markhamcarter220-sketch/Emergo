@@ -60,6 +60,8 @@ _LEARNING_RATE: float = 1e-3
 _GRAD_CLIP: float = 1.0
 _GRAD_EXPLODE_WARN_FACTOR: float = 10.0
 _RANK_LAMBDA: float = float(os.getenv("EMERGO_RANK_PENALTY", "0.1"))
+_RANK_THRESHOLD: float = float(os.getenv("EMERGO_RANK_THRESHOLD", "0.1"))
+_PHI_WINDOW: int = int(os.getenv("EMERGO_PHI_WINDOW", "200"))
 
 
 def phi_update(
@@ -74,6 +76,8 @@ def phi_update(
     early_stop_patience: int = 5,
     early_stop_delta: float = 1e-6,
     rank_lambda: float = _RANK_LAMBDA,
+    rank_threshold: float = _RANK_THRESHOLD,
+    phi_window: int = _PHI_WINDOW,
     force_adapt: bool = False,
 ) -> tuple[PhiMap, float]:
     """Jointly refine φ and F over the full graph/CE history.
@@ -92,6 +96,11 @@ def phi_update(
         early_stop_delta:     Minimum loss improvement for early stopping.
         rank_lambda:          Rank-regularization strength (EMERGO_RANK_PENALTY env var).
                               0.0 = disabled.  Default 0.1.
+        rank_threshold:       sigma_min hinge: regularizer only fires when the smallest
+                              singular value of W_phi falls below this threshold
+                              (EMERGO_RANK_THRESHOLD env var).  0.0 = always fire.
+        phi_window:           Sliding window: only the most recent phi_window transitions
+                              are used for training.  0 = no limit (EMERGO_PHI_WINDOW).
         force_adapt:          If True, bypass early stopping for this call (INV-17).
                               Used by kernel when phi_force_adapt_interval fires.
 
@@ -107,6 +116,12 @@ def phi_update(
     features = np.array([extract_graph_features(G, phi_t.d_features) for G in g_history])
     ce_encs = np.array([encode_ce(ce, phi_t.d_ce) for ce in ce_history[:T]])
 
+    # R1: truncate to sliding window to bound O(T) training cost
+    if phi_window > 0 and T > phi_window:
+        features = features[-(phi_window + 1):]
+        ce_encs = ce_encs[-phi_window:]
+        T = phi_window
+
     if optimizer == "adam":
         state = _make_adam_state(phi_candidate)
     else:
@@ -118,11 +133,15 @@ def phi_update(
     for step in range(n_steps):
         loss, grads = _loss_and_grads(phi_candidate, features, ce_encs, T)
 
-        # Rank regularization: augment W_phi gradient to prevent rank collapse
+        # R3: rank regularizer with sigma_min hinge — only fires when rank is at risk
         if rank_lambda > 0.0:
-            pen, pen_grad = _rank_penalty_and_grad(phi_candidate.W_phi, phi_candidate.d_latent)
-            loss = loss + rank_lambda * pen
-            grads["W_phi"] = grads["W_phi"] + rank_lambda * pen_grad
+            sigma_min = float(np.linalg.svd(phi_candidate.W_phi, compute_uv=False)[-1])
+            if sigma_min < rank_threshold:
+                pen, pen_grad = _rank_penalty_and_grad(
+                    phi_candidate.W_phi, phi_candidate.d_latent
+                )
+                loss = loss + rank_lambda * pen
+                grads["W_phi"] = grads["W_phi"] + rank_lambda * pen_grad
 
         _check_grad_norms(grads, grad_clip, step)
 
@@ -149,8 +168,10 @@ def phi_update(
 
     final_loss, _ = _loss_and_grads(phi_candidate, features, ce_encs, T)
     if rank_lambda > 0.0:
-        pen, _ = _rank_penalty_and_grad(phi_candidate.W_phi, phi_candidate.d_latent)
-        final_loss = final_loss + rank_lambda * pen
+        sigma_min_final = float(np.linalg.svd(phi_candidate.W_phi, compute_uv=False)[-1])
+        if sigma_min_final < rank_threshold:
+            pen, _ = _rank_penalty_and_grad(phi_candidate.W_phi, phi_candidate.d_latent)
+            final_loss = final_loss + rank_lambda * pen
 
     # Safety monitoring — regularization should prevent this; log if it fires
     rank = np.linalg.matrix_rank(phi_candidate.W_phi, tol=1e-6)

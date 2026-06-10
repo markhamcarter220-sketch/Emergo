@@ -160,6 +160,34 @@ class TestAuthorizeStructural:
         r = b.authorize_ce(ce, G, A)
         assert not r.authorized
 
+    def test_add_agent_denied_low_proposer_authority(self):
+        """R5: proposer with authority < threshold cannot add agents."""
+        b = SimulatedLuxBridge()
+        G = _graph()
+        A = _auth({"A": 0.3, "B": 0.5})
+        ce = make_ce("add_agent", ("A",), agent_id="C")
+        r = b.authorize_ce(ce, G, A)
+        assert not r.authorized
+        assert "0.300" in r.reason or "authority" in r.reason.lower()
+
+    def test_add_agent_allowed_high_proposer_authority(self):
+        """R5: proposer with authority >= threshold can add agents."""
+        b = SimulatedLuxBridge()
+        G = _graph()
+        A = _auth({"A": 0.7, "B": 0.5})
+        ce = make_ce("add_agent", ("A",), agent_id="C")
+        r = b.authorize_ce(ce, G, A)
+        assert r.authorized
+
+    def test_add_agent_no_proposer_skips_authority_check(self):
+        """System-level add_agent (empty participants) bypasses authority gate."""
+        b = SimulatedLuxBridge()
+        G = _graph()
+        A = _auth({"A": 0.1, "B": 0.1})
+        ce = make_ce("add_agent", (), agent_id="C")
+        r = b.authorize_ce(ce, G, A)
+        assert r.authorized
+
 
 # ---------------------------------------------------------------------------
 # CE Authorization — execute_task CEs

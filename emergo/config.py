@@ -62,3 +62,15 @@ COORDINATOR_CONFLICT_STRATEGY: str = os.getenv("EMERGO_CONFLICT_STRATEGY", "prio
 """Conflict resolution strategy for MultiAgentCoordinator.
    'priority': proposals sorted by authority; first on an edge wins.
 """
+
+# --- R5: add_agent authority gate ---
+ADD_AGENT_AUTHORITY_THRESHOLD: float = float(os.getenv("EMERGO_ADD_AGENT_THRESHOLD", "0.6"))
+"""Minimum proposer authority required to authorize an add_agent CE."""
+
+# --- R1: phi sliding window ---
+PHI_WINDOW: int = int(os.getenv("EMERGO_PHI_WINDOW", "200"))
+"""Maximum number of recent transitions used by phi_update. 0 = no limit."""
+
+# --- R3: rank regularizer hinge ---
+RANK_THRESHOLD: float = float(os.getenv("EMERGO_RANK_THRESHOLD", "0.1"))
+"""sigma_min threshold below which the rank regularizer fires. 0.0 = always fire."""

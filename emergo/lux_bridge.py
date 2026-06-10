@@ -21,6 +21,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import logging
+import os
 import threading
 import time
 import uuid
@@ -28,6 +29,8 @@ import uuid
 from emergo.types import Authority, CoordinationEvent, Graph
 
 logger = logging.getLogger(__name__)
+
+_ADD_AGENT_AUTHORITY_THRESHOLD: float = float(os.getenv("EMERGO_ADD_AGENT_THRESHOLD", "0.6"))
 
 
 @dataclass(frozen=True)
@@ -274,6 +277,17 @@ class SimulatedLuxBridge(LuxBridge):
                 return AuthResult(False, "add_agent requires agent_id param", False, 0.0)
             if new_id in G.agent_ids:
                 return AuthResult(False, f"Agent {new_id!r} already exists in graph", False, 0.0)
+            # Gate on proposer authority when a proposer is specified (R5).
+            if CE.participants:
+                proposer = CE.participants[0]
+                if A.get(proposer) < _ADD_AGENT_AUTHORITY_THRESHOLD:
+                    return AuthResult(
+                        False,
+                        f"Proposer {proposer!r} authority {A.get(proposer):.3f}"
+                        f" < {_ADD_AGENT_AUTHORITY_THRESHOLD} required for add_agent",
+                        False,
+                        0.0,
+                    )
             return AuthResult(True, "add_agent authorized", False, 0.0)
 
         # --- All other types: participants must exist and meet authority threshold ---

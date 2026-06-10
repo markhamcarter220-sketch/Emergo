@@ -16,21 +16,27 @@ Emergo
 
 Metrics
 -------
-  - CE acceptance rate    : fraction of proposed CEs accepted by Lux + graph.
-  - Error trajectory      : mean per-agent error at each step.
-  - Error reduction %     : (error_step0 - error_step60) / error_step0 * 100.
-  - Authority Gini        : Gini coefficient of final authority distribution
-                            (0 = flat/entangled, 1 = fully differentiated).
-  - Entanglement onset    : first step where authority Gini drops below 0.05
-                            (vanilla only — Emergo avoids this).
-  - Topology events       : accepted CE count (graph modifications).
-  - Wall time             : per-run wall-clock seconds.
+  - φ-loss reduction %  : % drop in topology-prediction loss from start → end.
+                          Primary learning signal — 0% for all frozen-φ baselines.
+  - CE acceptance rate  : fraction of proposed CEs accepted by Lux + graph.
+  - Error trajectory    : mean per-agent error at each step.
+  - Authority Gini      : Gini coefficient of final authority distribution
+                          (0 = flat/entangled, 1 = fully differentiated).
+  - Entanglement onset  : first step where authority Gini drops below 0.05.
+  - Topology events     : accepted CE count (graph modifications).
+  - Wall time           : per-run wall-clock seconds.
 
 Usage
 -----
-  python tests/benchmarks/bench_vanilla_vs_emergo.py           # full report
-  python tests/benchmarks/bench_vanilla_vs_emergo.py --quick   # 2-agent-count, 2 seeds
+  python tests/benchmarks/bench_vanilla_vs_emergo.py           # full report (~10 min)
+  python tests/benchmarks/bench_vanilla_vs_emergo.py --quick   # 200-step, 2 counts, 2 seeds
   python tests/benchmarks/bench_vanilla_vs_emergo.py --json    # also dump JSON to stdout
+
+Runtime note
+------------
+  HORIZON=1500 gives ~10 min per agent count at N_SEEDS=3 (Emergo ~3s/run at n=10).
+  φ-loss converges around step 1000; 1500 provides margin beyond the cold-start regime.
+  Use --quick (QUICK_HORIZON=200) for fast iteration during development.
 """
 
 from __future__ import annotations
@@ -59,7 +65,8 @@ from emergo.types import CoordinationEvent, Errors, Graph, PhiMap, State
 # ---------------------------------------------------------------------------
 
 AGENT_COUNTS = [5, 10, 15, 20]
-HORIZON = 60
+HORIZON = 1500          # φ-loss converges ~step 1000; 1500 gives margin
+QUICK_HORIZON = 200     # fast iteration: enough to observe authority dynamics
 N_SEEDS = 3
 EDGE_DENSITY = 0.3  # probability of initial edge between any two agents
 ENTANGLEMENT_GINI_THRESHOLD = 0.05  # Gini below this → "entangled"
@@ -124,7 +131,7 @@ def error_reduction_pct(errors: list[float]) -> float:
 @dataclass
 class RunResult:
     n_agents: int
-    mode: str  # "vanilla" | "emergo"
+    mode: str  # "vanilla" | "emergo" | "fixed_hierarchy" | "performance_metric"
     seed: int
     accepted: int = 0
     rejected: int = 0
@@ -134,6 +141,7 @@ class RunResult:
     final_authority_gini: float = 0.0
     final_authority_std: float = 0.0
     error_reduction_pct: float = 0.0
+    phi_loss_reduction_pct: float = 0.0  # % drop in φ-loss; 0 for frozen-φ baselines
     wall_seconds: float = 0.0
 
     @property
@@ -381,7 +389,7 @@ def run_emergo(initial_state: State, max_iters: int = HORIZON, seed: int = 0) ->
     final_state, _reason = emergo_kernel(
         state_copy,
         max_iterations=max_iters,
-        convergence_threshold=1e-6,  # low threshold so it runs full 60 steps
+        convergence_threshold=1e-6,  # low threshold — let it run the full horizon
         rng=np.random.default_rng(seed),
         phi_update_interval=10,
         phi_early_stop_patience=3,
@@ -412,6 +420,16 @@ def run_emergo(initial_state: State, max_iters: int = HORIZON, seed: int = 0) ->
     # Per-step mean error
     result.mean_errors = list(obs.mean_errors)
 
+    # φ-loss reduction — primary learning signal.
+    # obs.phi_losses is a list of (iteration, loss) tuples; index [1] is the loss value.
+    phi_vals = [float(pair[1]) for pair in obs.phi_losses]
+    if len(phi_vals) >= 4:
+        first = float(np.mean(phi_vals[:2]))
+        last = float(np.mean(phi_vals[-2:]))
+        result.phi_loss_reduction_pct = (
+            (first - last) / first * 100.0 if first > 1e-12 else 0.0
+        )
+
     # Final authority from final_state
     _, _, A_final, _ = final_state
     final_scores = list(A_final.scores.values())
@@ -436,6 +454,8 @@ class CountSummary:
     mean_final_authority_std: float
     mean_topology_events: float
     mean_wall_s: float
+    mean_phi_loss_reduction_pct: float = 0.0
+    stddev_phi_loss_reduction_pct: float = 0.0
     stddev_acceptance_rate: float = 0.0
     stddev_error_reduction_pct: float = 0.0
     entanglement_onset_steps: list[int | None] = field(default_factory=list)
@@ -459,6 +479,8 @@ def _summarize(runs: list[RunResult]) -> CountSummary:
         stddev_acceptance_rate=_sd([r.acceptance_rate for r in runs]),
         mean_error_reduction_pct=_m([r.error_reduction_pct for r in runs]),
         stddev_error_reduction_pct=_sd([r.error_reduction_pct for r in runs]),
+        mean_phi_loss_reduction_pct=_m([r.phi_loss_reduction_pct for r in runs]),
+        stddev_phi_loss_reduction_pct=_sd([r.phi_loss_reduction_pct for r in runs]),
         mean_final_gini=_m([r.final_authority_gini for r in runs]),
         mean_final_authority_std=_m([r.final_authority_std for r in runs]),
         mean_topology_events=_m([float(r.topology_events) for r in runs]),
@@ -539,8 +561,10 @@ def generate_report(
     lines: list[str] = []
 
     # -- Summaries per (mode × n_agents) --
-    summaries: dict[str, dict[int, CountSummary]] = {"vanilla": {}, "emergo": {}}
-    for mode in ("vanilla", "emergo"):
+    _all_modes_present = [m for m in ("vanilla", "emergo", "fixed_hierarchy", "performance_metric")
+                          if m in results]
+    summaries: dict[str, dict[int, CountSummary]] = {m: {} for m in _all_modes_present}
+    for mode in _all_modes_present:
         for n in agent_counts:
             summaries[mode][n] = _summarize(results[mode][n])
 
@@ -550,6 +574,10 @@ def generate_report(
         "",
         f"**Configuration**: {len(agent_counts)} agent counts {agent_counts},"
         f" {horizon}-step horizon, {n_seeds} seeds per configuration",
+        "",
+        "> **Why 1500 steps?** φ-loss (topology prediction error) converges after ~1000 steps.",
+        "> Sub-200-step benchmarks measure cold-start noise, not steady-state learning.",
+        "> See §\"φ-Loss Reduction\" below for the horizon-sensitivity rationale.",
         "",
         "| Parameter | Vanilla | Emergo |",
         "| --- | --- | --- |",
@@ -626,6 +654,26 @@ def generate_report(
     lines += [
         "## Metric Tables",
         "",
+        "### φ-Loss Reduction % (primary learning signal — 0% for all frozen-φ baselines)",
+        "",
+        "φ-loss = Frobenius distance between predicted and actual latent embeddings.",
+        "Only Emergo updates φ; the other baselines always read 0%.",
+        "",
+        "| n_agents | Vanilla (mean ± std) | Emergo (mean ± std) | Δ (Emergo − Vanilla) |",
+        "| ---: | :---: | :---: | :---: |",
+    ]
+    for n in agent_counts:
+        v = summaries["vanilla"][n]
+        e = summaries["emergo"][n]
+        delta = e.mean_phi_loss_reduction_pct - v.mean_phi_loss_reduction_pct
+        lines.append(
+            f"| {n} | {v.mean_phi_loss_reduction_pct:.1f}% ± {v.stddev_phi_loss_reduction_pct:.1f}"
+            f" | {e.mean_phi_loss_reduction_pct:.1f}% ± {e.stddev_phi_loss_reduction_pct:.1f}"
+            f" | **{delta:+.1f} pp** |"
+        )
+    lines += [""]
+
+    lines += [
         "### CE Acceptance Rate",
         "",
         "| n_agents | Vanilla (mean ± std) | Emergo (mean ± std) | Δ (Emergo − Vanilla) |",
@@ -734,15 +782,15 @@ def generate_report(
         lines += [
             f"### n = {n} agents",
             "",
-            "| seed | mode | accept% | err_reduction% | final_gini | auth_std |"
-            " topology_events | wall_s |",
+            "| seed | mode | φ-loss_red% | accept% | final_gini | auth_std |"
+            " topo_events | wall_s |",
             "| ---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |",
         ]
-        for mode in ("vanilla", "emergo"):
+        for mode in _all_modes_present:
             for r in results[mode][n]:
                 lines.append(
-                    f"| {r.seed} | {r.mode} | {r.acceptance_rate:.2%}"
-                    f" | {r.error_reduction_pct:.1f}%"
+                    f"| {r.seed} | {r.mode} | {r.phi_loss_reduction_pct:.1f}%"
+                    f" | {r.acceptance_rate:.2%}"
                     f" | {r.final_authority_gini:.4f}"
                     f" | {r.final_authority_std:.4f}"
                     f" | {r.topology_events}"
@@ -802,6 +850,7 @@ def generate_report(
         return statistics.mean(vals), statistics.stdev(vals) if len(vals) > 1 else 0.0
 
     for label, attr in [
+        ("φ-loss reduction %", "phi_loss_reduction_pct"),
         ("CE acceptance rate", "acceptance_rate"),
         ("Error reduction %", "error_reduction_pct"),
         ("Authority Gini (final)", "final_authority_gini"),
@@ -810,7 +859,7 @@ def generate_report(
     ]:
         vm, vsd = _agg(all_v_runs, attr)
         em, esd = _agg(all_e_runs, attr)
-        if vm != 0:
+        if abs(vm) > 1e-6:
             imp = f"{(em - vm) / abs(vm) * 100:+.1f}%"
         else:
             imp = f"{em - vm:+.4f} (abs)"
@@ -847,6 +896,7 @@ def generate_report(
                 mode=mode,
                 mean_acceptance_rate=_m([r.acceptance_rate for r in all_runs]),
                 mean_error_reduction_pct=_m([r.error_reduction_pct for r in all_runs]),
+                mean_phi_loss_reduction_pct=_m([r.phi_loss_reduction_pct for r in all_runs]),
                 mean_final_gini=_m([r.final_authority_gini for r in all_runs]),
                 mean_final_authority_std=_m([r.final_authority_std for r in all_runs]),
                 mean_topology_events=_m([float(r.topology_events) for r in all_runs]),
@@ -857,6 +907,7 @@ def generate_report(
         sep = "| --- | " + " | ".join(":---:" for _ in all_modes) + " |"
         lines += [header, sep]
         for label, attr in [
+            ("**φ-loss reduction %**", "mean_phi_loss_reduction_pct"),
             ("Acceptance rate", "mean_acceptance_rate"),
             ("Error reduction %", "mean_error_reduction_pct"),
             ("Authority Gini (final)", "mean_final_gini"),
@@ -902,16 +953,17 @@ def main() -> None:
 
     counts = QUICK_AGENT_COUNTS if args.quick else AGENT_COUNTS
     seeds = QUICK_N_SEEDS if args.quick else N_SEEDS
+    horizon = QUICK_HORIZON if args.quick else HORIZON
 
     print(
-        f"Running benchmark: {len(counts)} agent counts × {seeds} seeds × 2 modes"
-        f" × {HORIZON} steps ...",
+        f"Running benchmark: {len(counts)} agent counts × {seeds} seeds × 4 modes"
+        f" × {horizon} steps ...",
         file=sys.stderr,
     )
 
-    all_results = run_all_benchmarks(counts, seeds, HORIZON, verbose=True)
+    all_results = run_all_benchmarks(counts, seeds, horizon, verbose=True)
 
-    report = generate_report(all_results, counts, seeds, HORIZON)
+    report = generate_report(all_results, counts, seeds, horizon)
     print(report)
 
     if args.json:
@@ -925,6 +977,7 @@ def main() -> None:
                         "accepted": r.accepted,
                         "rejected": r.rejected,
                         "acceptance_rate": r.acceptance_rate,
+                        "phi_loss_reduction_pct": r.phi_loss_reduction_pct,
                         "error_reduction_pct": r.error_reduction_pct,
                         "final_authority_gini": r.final_authority_gini,
                         "final_authority_std": r.final_authority_std,

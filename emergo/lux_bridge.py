@@ -24,6 +24,7 @@ import logging
 import os
 import threading
 import time
+from typing import Any
 import uuid
 
 from emergo.types import Authority, CoordinationEvent, Graph
@@ -354,27 +355,106 @@ class SimulatedLuxBridge(LuxBridge):
 
 
 class RealLuxBridge(LuxBridge):
-    """Adapter for actual Lux Python bindings.
+    """Adapter that calls the real Lux kernel via PyO3 Python bindings.
 
-    Set EMERGO_LUX_MODE=real and ensure the lux package is installed.
-    ALL operations are fail-closed: any exception → denied / False.
+    Requires `lux_kernel` to be built from the Lux-V1.0 repo:
+        cd /path/to/Lux-V1.0
+        pip install maturin
+        maturin develop --features python
 
-    Retry logic: authorize_ce, check_capability, and deduct_resource each
-    retry up to max_retries times on transient errors before failing closed.
+    Set EMERGO_LUX_MODE=real to activate.
+    ALL operations fail-closed: any exception → denied / False.
+
+    Authorization is handled by PyLuxGate (stateless, pure).
+    Capability management, resource accounting, and audit write are
+    stub-complete for the integration demo — full wiring is a future prompt.
     """
 
-    def __init__(self, max_retries: int = 3, retry_delay: float = 0.5) -> None:
+    def __init__(
+        self,
+        authority_threshold: float = 0.3,
+        add_agent_threshold: float = 0.6,
+        max_agents: int = 20,
+        max_retries: int = 3,
+        retry_delay: float = 0.5,
+    ) -> None:
         self._max_retries = max_retries
         self._retry_delay = retry_delay
+        self._lux: Any = None  # stub for capability/resource/audit methods
         try:
-            import lux as _lux
+            from lux_kernel import PyLuxGate
 
-            self._lux = _lux
+            self._gate = PyLuxGate(
+                authority_threshold=authority_threshold,
+                add_agent_threshold=add_agent_threshold,
+                max_agents=max_agents,
+            )
+            logger.info(
+                "RealLuxBridge: PyLuxGate initialized "
+                "(authority_threshold=%.2f, add_agent_threshold=%.2f, max_agents=%d)",
+                authority_threshold,
+                add_agent_threshold,
+                max_agents,
+            )
         except ImportError as exc:
             raise LuxError(
-                "Real Lux bindings not available. "
-                "Install the 'lux' package or use EMERGO_LUX_MODE=simulated."
+                "lux_kernel not found. Build it from the Lux-V1.0 repo:\n"
+                "  cd /path/to/Lux-V1.0\n"
+                "  pip install maturin\n"
+                "  maturin develop --features python\n"
+                "Or use EMERGO_LUX_MODE=simulated for development."
             ) from exc
+
+    def authorize_ce(
+        self,
+        CE: CoordinationEvent,
+        G: Graph,
+        A: Authority,
+        min_authority: float = 0.1,
+        reserve_resources: bool = False,
+    ) -> AuthResult:
+        """Gate CE proposal through PyLuxGate (real Rust enforcement).
+
+        Maps Emergo's CE/Graph/Authority types to PyLuxGate's flat API.
+        Fail-closed: any exception returns unauthorized.
+        """
+        try:
+            result = self._gate.authorize_ce(
+                event_type=CE.event_type,
+                participants=list(CE.participants),
+                authority_scores={a: A.get(a) for a in CE.participants},
+                graph_size=len(G.agent_ids),
+            )
+            approved: bool = bool(result["approved"])
+            reason: str = str(result["reason"])
+            denial_class = result.get("denial_class")
+
+            logger.debug(
+                "RealLuxBridge.authorize_ce: event=%r proposer=%r approved=%s "
+                "reason=%r denial_class=%r",
+                CE.event_type,
+                CE.participants[0] if CE.participants else None,
+                approved,
+                reason,
+                denial_class,
+            )
+
+            return AuthResult(
+                authorized=approved,
+                reason=reason,
+                capability_verified=False,
+                resource_reserved=0.0,
+                audit_id=None,
+            )
+        except Exception as exc:
+            logger.warning("RealLuxBridge.authorize_ce failed (fail-closed): %s", exc)
+            return AuthResult(
+                authorized=False,
+                reason=f"Lux error: {exc}",
+                capability_verified=False,
+                resource_reserved=0.0,
+                audit_id=None,
+            )
 
     def _retry(self, fn: object, *args: object, **kwargs: object) -> object:
         """Call fn(*args, **kwargs) up to max_retries times; fail-closed on last failure."""
@@ -387,20 +467,6 @@ class RealLuxBridge(LuxBridge):
                 if attempt < self._max_retries:
                     time.sleep(self._retry_delay * (2**attempt))
         raise last_exc
-
-    def authorize_ce(
-        self,
-        CE: CoordinationEvent,
-        G: Graph,
-        A: Authority,
-        min_authority: float = 0.1,
-        reserve_resources: bool = False,
-    ) -> AuthResult:
-        try:
-            return self._retry(self._lux.authorize_ce, CE, G, A, min_authority, reserve_resources)  # type: ignore[return-value]
-        except Exception as exc:
-            logger.warning("RealLuxBridge.authorize_ce failed (fail-closed): %s", exc)
-            return AuthResult(False, f"Lux error: {exc}", False, 0.0)
 
     def check_capability(self, agent_id: str, capability: str) -> bool:
         try:

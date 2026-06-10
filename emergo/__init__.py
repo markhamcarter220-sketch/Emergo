@@ -140,6 +140,7 @@ from emergo.store import (
 from emergo.types import (
     Authority,
     CoordinationEvent,
+    EligibilityTraces,
     Errors,
     ErrorScales,
     Goal,
@@ -162,6 +163,7 @@ __all__ = [  # noqa: RUF022
     "DefaultProposalGenerator",
     "DependencyPlanner",
     "DetectorResult",
+    "EligibilityTraces",
     "ErrorScales",
     "Errors",
     "ExecutionResult",

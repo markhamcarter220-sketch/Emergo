@@ -233,6 +233,138 @@ def run_vanilla(initial_state: State, max_iters: int = HORIZON, seed: int = 0) -
 
 
 # ---------------------------------------------------------------------------
+# Fixed-hierarchy baseline
+# ---------------------------------------------------------------------------
+
+
+def run_fixed_hierarchy(
+    initial_state: State, max_iters: int = HORIZON, seed: int = 0
+) -> RunResult:
+    """Fixed hierarchy: authority proportional to agent rank, never updated.
+
+    Agent 0 has the highest authority (1.0), agent n-1 the lowest (≥ 0.1).
+    No phi learning, no error-based authority update — a pure static-rank baseline.
+    """
+    n_agents = len(initial_state[0].agent_ids)
+    result = RunResult(n_agents=n_agents, mode="fixed_hierarchy", seed=seed)
+
+    rng = np.random.default_rng(seed)
+    G, phi, A, E = copy.deepcopy(initial_state)
+    lux = Lux()
+    gen = DefaultProposalGenerator()
+
+    # Assign deterministic hierarchy: agent_0 = 1.0, agent_{n-1} ≥ 0.2.
+    # All agents stay above the Lux min_authority floor (0.1).
+    for i, aid in enumerate(G.agent_ids):
+        score = 1.0 - i * 0.8 / max(1, n_agents - 1)
+        A.set(aid, max(0.1, score))
+
+    t0 = time.monotonic()
+
+    for step in range(max_iters):
+        scores = list(A.scores.values())
+        g = gini_coefficient(scores)
+        result.authority_ginis.append(g)
+        if (
+            result.entanglement_onset is None
+            and len(result.authority_ginis) >= 2
+            and result.authority_ginis[-2] >= ENTANGLEMENT_GINI_THRESHOLD
+            and g < ENTANGLEMENT_GINI_THRESHOLD
+        ):
+            result.entanglement_onset = step
+
+        result.mean_errors.append(E[-1].mean_error() if E else 0.0)
+
+        ce = gen.propose(A, G, rng)
+        if ce is None:
+            continue
+
+        G_next, accepted, _ = ce_execute(G, ce, lux, A)
+        errors = _broadcast_error(G, G_next, phi, ce)
+        E = [*E, errors]
+        # Authority deliberately NOT updated — hierarchy is frozen.
+        if accepted:
+            result.accepted += 1
+            G = G_next
+        else:
+            result.rejected += 1
+
+    result.wall_seconds = time.monotonic() - t0
+    final_scores = list(A.scores.values())
+    result.final_authority_gini = gini_coefficient(final_scores)
+    result.final_authority_std = float(np.std(final_scores)) if final_scores else 0.0
+    result.error_reduction_pct = error_reduction_pct(result.mean_errors)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Performance-metric baseline
+# ---------------------------------------------------------------------------
+
+
+def run_performance_metric(
+    initial_state: State, max_iters: int = HORIZON, seed: int = 0
+) -> RunResult:
+    """Performance-metric baseline: authority updated by acceptance/rejection outcome.
+
+    Accepted CE → proposer +0.05 (reward for Lux approval).
+    Rejected CE → proposer −0.02 (small penalty).
+    No phi learning, no error computation — a simple outcome-based signal.
+    """
+    n_agents = len(initial_state[0].agent_ids)
+    result = RunResult(n_agents=n_agents, mode="performance_metric", seed=seed)
+
+    rng = np.random.default_rng(seed)
+    G, phi, A, E = copy.deepcopy(initial_state)
+    lux = Lux()
+    gen = DefaultProposalGenerator()
+
+    t0 = time.monotonic()
+
+    for step in range(max_iters):
+        scores = list(A.scores.values())
+        g = gini_coefficient(scores)
+        result.authority_ginis.append(g)
+        if (
+            result.entanglement_onset is None
+            and len(result.authority_ginis) >= 2
+            and result.authority_ginis[-2] >= ENTANGLEMENT_GINI_THRESHOLD
+            and g < ENTANGLEMENT_GINI_THRESHOLD
+        ):
+            result.entanglement_onset = step
+
+        result.mean_errors.append(E[-1].mean_error() if E else 0.0)
+
+        ce = gen.propose(A, G, rng)
+        if ce is None:
+            continue
+
+        G_next, accepted, _ = ce_execute(G, ce, lux, A)
+        errors = _broadcast_error(G, G_next, phi, ce)
+        E = [*E, errors]
+
+        if ce.participants:
+            proposer = ce.participants[0]
+            if accepted:
+                A.set(proposer, min(0.8, A.get(proposer) + 0.05))
+            else:
+                A.set(proposer, max(0.05, A.get(proposer) - 0.02))
+
+        if accepted:
+            result.accepted += 1
+            G = G_next
+        else:
+            result.rejected += 1
+
+    result.wall_seconds = time.monotonic() - t0
+    final_scores = list(A.scores.values())
+    result.final_authority_gini = gini_coefficient(final_scores)
+    result.final_authority_std = float(np.std(final_scores)) if final_scores else 0.0
+    result.error_reduction_pct = error_reduction_pct(result.mean_errors)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Emergo kernel run
 # ---------------------------------------------------------------------------
 
@@ -345,23 +477,27 @@ def run_all_benchmarks(
 
     Returns ``{mode: {n_agents: [RunResult, ...]}}``
     """
-    results: dict[str, dict[int, list[RunResult]]] = {
-        "vanilla": {},
-        "emergo": {},
-    }
+    _RUNNERS = [
+        ("vanilla", run_vanilla),
+        ("emergo", run_emergo),
+        ("fixed_hierarchy", run_fixed_hierarchy),
+        ("performance_metric", run_performance_metric),
+    ]
 
-    total = len(agent_counts) * n_seeds * 2
+    results: dict[str, dict[int, list[RunResult]]] = {m: {} for m, _ in _RUNNERS}
+
+    total = len(agent_counts) * n_seeds * len(_RUNNERS)
     done = 0
 
     for n_agents in agent_counts:
-        results["vanilla"][n_agents] = []
-        results["emergo"][n_agents] = []
+        for mode, _ in _RUNNERS:
+            results[mode][n_agents] = []
 
         for seed in range(n_seeds):
             base_rng = np.random.default_rng(seed * 1000 + n_agents)
             initial_state = make_initial_state(n_agents, base_rng)
 
-            for mode, runner in [("vanilla", run_vanilla), ("emergo", run_emergo)]:
+            for mode, runner in _RUNNERS:
                 if verbose:
                     print(
                         f"  [{done+1}/{total}] {mode:8s} n={n_agents:2d} seed={seed} ...",
@@ -685,6 +821,68 @@ def generate_report(
         f"*Report generated over {len(agent_counts)} agent-count configurations,"
         f" {n_seeds} seeds each, {horizon}-step horizon.*",
     ]
+
+    # ---- Four-way comparison (all modes present in results) ----
+    all_modes = [m for m in ("vanilla", "emergo", "fixed_hierarchy", "performance_metric")
+                 if m in results]
+    if len(all_modes) > 2:
+        lines += ["", "## Four-Way Baseline Comparison", ""]
+        mode_labels = {
+            "vanilla": "Vanilla",
+            "emergo": "Emergo",
+            "fixed_hierarchy": "FixedHierarchy",
+            "performance_metric": "PerfMetric",
+        }
+
+        # Summary stats per mode (averaged over all n_agents and seeds)
+        mode_summaries_all: dict[str, CountSummary] = {}
+        for mode in all_modes:
+            all_runs = [r for n in agent_counts for r in results[mode][n]]
+
+            def _m(vals: list[float]) -> float:
+                return statistics.mean(vals) if vals else 0.0
+
+            mode_summaries_all[mode] = CountSummary(
+                n_agents=0,
+                mode=mode,
+                mean_acceptance_rate=_m([r.acceptance_rate for r in all_runs]),
+                mean_error_reduction_pct=_m([r.error_reduction_pct for r in all_runs]),
+                mean_final_gini=_m([r.final_authority_gini for r in all_runs]),
+                mean_final_authority_std=_m([r.final_authority_std for r in all_runs]),
+                mean_topology_events=_m([float(r.topology_events) for r in all_runs]),
+                mean_wall_s=_m([r.wall_seconds for r in all_runs]),
+            )
+
+        header = "| Metric | " + " | ".join(mode_labels[m] for m in all_modes) + " |"
+        sep = "| --- | " + " | ".join(":---:" for _ in all_modes) + " |"
+        lines += [header, sep]
+        for label, attr in [
+            ("Acceptance rate", "mean_acceptance_rate"),
+            ("Error reduction %", "mean_error_reduction_pct"),
+            ("Authority Gini (final)", "mean_final_gini"),
+            ("Authority std (final)", "mean_final_authority_std"),
+            ("Topology events", "mean_topology_events"),
+            ("Wall time (s)", "mean_wall_s"),
+        ]:
+            vals = [f"{getattr(mode_summaries_all[m], attr):.4f}" for m in all_modes]
+            lines.append(f"| {label} | " + " | ".join(vals) + " |")
+
+        lines += [""]
+
+        lines += [
+            "### Baseline Descriptions",
+            "",
+            "| Mode | Description |",
+            "| --- | --- |",
+            "| **Vanilla** | Scalar broadcast error to all CE participants; φ frozen at random init. |",
+            "| **Emergo** | Differentiated per-agent errors (proposer=global φ error, "
+            "participant=local adjacency delta); φ updated by SGD every 10 steps. |",
+            "| **FixedHierarchy** | Authority set proportional to agent rank at init, "
+            "never updated.  No learning, no error signal. |",
+            "| **PerfMetric** | Authority updated by raw acceptance outcome: "
+            "+0.05 on accepted, −0.02 on rejected.  No phi learning. |",
+            "",
+        ]
 
     return "\n".join(lines)
 

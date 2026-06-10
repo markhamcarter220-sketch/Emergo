@@ -193,6 +193,47 @@ class ErrorScales:
         )
 
 
+@dataclass(frozen=True)
+class EligibilityTraces:
+    """Per-agent eligibility traces for multi-step credit assignment.
+
+    Traces decay by ``decay`` each iteration and reset to 1.0 when an agent
+    participates in an accepted CE.  Multiplying the authority delta by the
+    trace weight amplifies recent contributions and dampens stale ones.
+
+    Passing ``traces=None`` to ``authority_update`` is equivalent to uniform
+    traces (weight 1.0 for all agents) — identical to pre-trace behavior.
+    """
+
+    traces: dict[str, float]
+    decay: float = 0.8
+
+    def __hash__(self) -> int:
+        return hash((frozenset(self.traces.items()), self.decay))
+
+    def step(
+        self, accepted_participants: tuple[str, ...] | None = None
+    ) -> "EligibilityTraces":
+        """Decay all traces; reset participating agents to 1.0."""
+        decayed = {a: v * self.decay for a, v in self.traces.items()}
+        if accepted_participants:
+            for a in accepted_participants:
+                if a in decayed:
+                    decayed[a] = 1.0
+        return EligibilityTraces(traces=decayed, decay=self.decay)
+
+    def get(self, agent_id: str) -> float:
+        """Return trace weight for agent; defaults to 1.0 for unknown agents."""
+        return self.traces.get(agent_id, 1.0)
+
+    @classmethod
+    def uniform(
+        cls, agent_ids: tuple[str, ...], decay: float = 0.8
+    ) -> "EligibilityTraces":
+        """Construct traces with all agents at weight 1.0."""
+        return cls(traces={a: 1.0 for a in agent_ids}, decay=decay)
+
+
 # The complete mutable state of the system.  All four components are written
 # atomically by each operation; no shared mutable sub-state exists.
 State = tuple[Graph, PhiMap, Authority, list[Errors]]

@@ -22,7 +22,7 @@ from emergo.lux import Lux
 from emergo.observer import fire_observers
 from emergo.phi_update import phi_update
 from emergo.proposal import DefaultProposalGenerator, ProposalGenerator
-from emergo.types import Authority, CoordinationEvent, Errors, ErrorScales, Graph, PhiMap, State
+from emergo.types import Authority, CoordinationEvent, EligibilityTraces, Errors, ErrorScales, Graph, PhiMap, State
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +82,7 @@ def emergo_kernel(
     phi_early_stop_patience: int = 5,
     phi_force_adapt_interval: int = 1000,
     phi_window: int = 200,
+    trace_decay: float = 0.0,
 ) -> tuple[State, str] | tuple[State, str, KernelDiagnostics]:
     """Run the fixed-point loop until convergence or max_iterations.
 
@@ -108,6 +109,9 @@ def emergo_kernel(
       phi_window:               Sliding window passed to phi_update: only the most recent
                                 phi_window transitions are used for training.  0 = no limit.
                                 Default 200 (bounds O(T) training cost).
+      trace_decay:              Eligibility trace decay factor ∈ (0, 1).  0.0 (default)
+                                disables traces entirely — identical to pre-trace behavior.
+                                Recommended: 0.8 for multi-step credit assignment.
 
     Returns:
       - (final_state, reason) when collect_diagnostics=False (default)
@@ -139,6 +143,14 @@ def emergo_kernel(
     # local_scale tracks participant (structural delta) errors.
     err_scales = ErrorScales()
 
+    # Per-agent eligibility traces for multi-step credit assignment.
+    # trace_decay=0.0 means traces are disabled (uniform weight = pre-trace behavior).
+    eligibility_traces: EligibilityTraces | None = (
+        EligibilityTraces.uniform(G_t.agent_ids, decay=trace_decay)
+        if trace_decay > 0.0
+        else None
+    )
+
     # Phi-loss history for convergence signal 2 (Critical 1.3).
     _phi_losses: list[float] = []
 
@@ -159,7 +171,9 @@ def emergo_kernel(
         # Step 1: CE_Execution — atomic, all-or-nothing
         G_next, success, _ = ce_execute(G_t, CE_t, lux, A_t)
         if not success:
-            # CE rejected; state unchanged
+            # CE rejected; state unchanged.  Decay traces even on rejection (TD(λ) convention).
+            if eligibility_traces is not None:
+                eligibility_traces = eligibility_traces.step()
             fire_observers(_observers, "on_ce_result", t, CE_t, False, None)
             if collect_diagnostics:
                 edge_count = int(np.sum(G_t.adjacency > 0))
@@ -184,8 +198,12 @@ def emergo_kernel(
         # Step 2: ErrorComputation — pure function over current φ
         errors = error_computation(G_t, G_next, phi_t, CE_t)
 
-        # Step 3: AuthorityUpdate — deterministic from errors and per-channel scales
-        A_next = authority_update(A_t, errors, err_scales)
+        # Step 3: AuthorityUpdate — deterministic from errors, per-channel scales, and traces
+        A_next = authority_update(A_t, errors, err_scales, eligibility_traces)
+        if eligibility_traces is not None:
+            eligibility_traces = eligibility_traces.step(
+                accepted_participants=tuple(CE_t.participants)
+            )
 
         # Update per-channel EMA scales after authority_update (prevents look-ahead bias).
         # Multiply by 2 so scale ≈ 2*mean_error: at typical performance,

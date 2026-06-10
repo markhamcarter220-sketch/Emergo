@@ -2,7 +2,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-405%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-609%20passing-brightgreen.svg)](tests/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 > **A system where agents earn authority by accurately predicting how their
@@ -170,8 +170,11 @@ flowchart TD
 **Layer 1 — The Interaction**: An agent proposes a **Coordination Event** (CE): a graph mutation (`add_edge`, `remove_edge`, `update_capabilities`) or a task execution (`execute_task`, `decompose_goal`, `delegate`).
 
 **Layer 2 — The Learning Signal**: After execution, the system asks: *Did the topology change the way you predicted?*
-- Predicted well → authority grows
-- Predicted poorly → authority shrinks
+- Proposer: judged against its own historical φ-prediction error (global channel)
+- Participants: judged against their own structural-delta error history (local channel)
+- Each channel's EMA scale is tracked independently (`ErrorScales`) so the two
+  incommensurable error magnitudes don't collapse authority by always dominating each other
+- Predicted well → authority grows; predicted poorly → authority shrinks
 - Authority determines how much future coordination you can initiate
 
 **Layer 3 — The Emergence**: Over thousands of interactions the network self-organizes around agents that predict well. Roles emerge naturally — not assigned.
@@ -379,19 +382,25 @@ pip install "emergo[viz]"
 
 ### Authority scores all collapse to `~0.1`
 
-This is the **authority-collapse failure mode**. It occurs when:
-- φ is near-zero at initialization (global prediction error ≈ 0)
-- Two-participant CEs (add_edge, remove_edge) make the non-proposing participant's
-  local adjacency-delta error dominate `max_error`, giving `correctness = 0` on
-  every accepted CE
+This failure mode was present before v0.3.0 and is now **fixed by the dual-channel
+error normalization** introduced in that release.
 
-Mitigations:
-1. Run with `EMERGO_RANK_PENALTY=0.5` to build up φ weight faster
-2. Use single-participant CEs (`update_capabilities`) or a sparser initial graph
-3. Increase `EMERGO_ETA` to increase differentiation speed
+**Root cause (historical)**: the old batch-max normalization mixed global
+φ-prediction errors (typically small, ~0.001–0.03) with local structural-delta
+errors (typically larger, ~0.4–0.7) into a single batch and normalized against
+their maximum. As the EMA scale converged to the mean error level, every agent
+received `correctness ≈ 0` and `delta ≈ −0.5` on every CE, causing authority to
+monotonically decrease until all agents hit the Lux floor.
 
-The `emergo-health` CLI and `run_health_check()` will detect and diagnose this
-automatically (`detect_authority_collapse`).
+**Fix (v0.3.0)**: `ErrorScales` tracks independent EMA estimates for each channel
+(`global_scale` for proposer errors, `local_scale` for participant errors). The
+kernel feeds `2× observed errors` into `ErrorScales.update()` so the scale
+converges to twice the mean error — making average performance neutral (delta = 0)
+and creating genuine above/below-average differentiation.
+
+If you *do* observe unexpected collapse on a custom graph, check:
+1. That the `emergo` package is v0.3.0 or later (`python -c "import emergo; print(emergo.__version__)"`)
+2. Run `emergo health --agents 10 --iterations 300` — `detect_authority_collapse` will diagnose it
 
 ### `phi_loss` increases instead of decreasing
 
@@ -436,25 +445,32 @@ python -c "from emergo.cli import demo; demo()"
 
 | Module | Responsibility |
 |---|---|
-| `emergo/types.py` | `Graph`, `CoordinationEvent`, `PhiMap`, `Authority`, `Errors`, `Task`, `Goal` |
+| `emergo/types.py` | `Graph`, `CoordinationEvent`, `PhiMap`, `Authority`, `Errors`, `ErrorScales`, `Task`, `Goal` |
 | `emergo/kernel.py` | `emergo_kernel` fixed-point loop, `make_initial_phi`, `make_initial_authority` |
-| `emergo/ce_execution.py` | Graph-mutation operations; INV-1/3/4 |
-| `emergo/error_computation.py` | Per-agent prediction errors (global for proposer, local for participants) |
-| `emergo/authority_update.py` | `η`-step authority update with clipping |
-| `emergo/phi_update.py` | Joint φ/F gradient descent; Adam; rank regularization; early stopping |
-| `emergo/features.py` | `extract_graph_features` — fixed-dim spectral + structural feature vector |
+| `emergo/ce_execution.py` | Graph-mutation operations; governance guards (remove-agent protection, add-agent cap); INV-1/3/4/12 |
+| `emergo/error_computation.py` | Differentiated per-agent errors: global φ-prediction for proposer, local structural delta for participants |
+| `emergo/authority_update.py` | `η`-step authority update; dual-channel `ErrorScales` normalization; INV-11 cap |
+| `emergo/phi_update.py` | Joint φ/F gradient descent; Adam; rank regularization; early stopping; INV-17 |
+| `emergo/features.py` | `extract_graph_features` — fixed-dim spectral + structural features; `lru_cache` on eigvalsh |
 | `emergo/lux.py` | `Lux` — single authorization gate |
 | `emergo/lux_bridge.py` | `LuxBridge` protocol, `SimulatedLuxBridge`, `RealLuxBridge`, `validate_bridge` |
+| `emergo/rate_limiting.py` | `RateLimitedLuxBridge` — per-agent token-bucket rate limiter and blast-radius cap |
 | `emergo/executor.py` | Goal decomposition + task execution (INV-5/6/7/8) |
 | `emergo/planner.py` | `SequentialPlanner`, `DependencyPlanner` |
 | `emergo/coordinator.py` | `MultiAgentCoordinator` (INV-9) |
 | `emergo/proposal.py` | `DefaultProposalGenerator`, `SequenceProposalGenerator`, `WeightedMixGenerator` |
 | `emergo/observer.py` | `KernelObserver` protocol, `LoggingObserver`, `HistoryObserver` (INV-10) |
 | `emergo/metrics.py` | `MetricsObserver` — Prometheus text + OpenTelemetry export |
+| `emergo/alerting.py` | `AlertManager` — configurable `AlertRule` instances with per-rule cooldown; 4 built-in rules |
 | `emergo/diagnostics.py` | `KernelDiagnostics`, `run_health_check`, 8 failure detectors |
+| `emergo/persistence.py` | `save_state` / `load_state` — pickle-based checkpoint |
+| `emergo/store.py` | `StateStore` abstraction; `SqliteStore` (WAL), `PickleStore`, `CheckpointKernelObserver` |
+| `emergo/distributed.py` | `run_parallel_kernels` — multiprocessing pool; `best_converged`, `all_converged`, `summarize_results` |
+| `emergo/sparse.py` | Optional scipy sparse adjacency; `is_sparse_beneficial`, `estimate_memory_bytes` |
+| `emergo/logging_config.py` | `JsonFormatter` — single-line ISO-8601 JSON logs; `configure_structured_logging` |
 | `emergo/visualize.py` | Optional matplotlib/networkx plots; `print_health_report`; JSON export |
 | `emergo/config.py` | All env-var defaults in one place |
-| `emergo/cli.py` | `emergo-demo`, `emergo-kernel`, `emergo-health` CLI entry points |
+| `emergo/cli.py` | `emergo run`, `emergo demo`, `emergo viz`, `emergo health`, `emergo checkpoint` CLI |
 
 ---
 
@@ -480,14 +496,23 @@ It's closer to how natural systems organize: ant colonies, neural networks, ecos
 | Observer protocol | ✅ Done | INV-10 isolation, HistoryObserver, MetricsObserver |
 | Proposal generators | ✅ Done | Default (softmax), Sequence, WeightedMix |
 | Rank regularization | ✅ Done | Nuclear-norm φ gradient, EMERGO_RANK_PENALTY |
-| Dynamic features | ✅ Done | Normalized spectral + structural, any n_agents |
+| Dynamic features | ✅ Done | Normalized spectral + structural, any n_agents; lru_cache on eigvalsh |
 | Diagnostics | ✅ Done | 8 failure detectors, health report, JSON export |
 | Convergence proof | ✅ Done | C1/C2/C3 proof sketch in CONVERGENCE_ANALYSIS.md |
-| Windowed φ history | 🔲 Planned | Cap `g_history` length to prevent O(n²) phi_update cost at scale |
+| Safety contract (Tier 1) | ✅ Done | INV-11 through INV-18; Lean 4 theorem stubs; 9 adversarial tests |
+| CLI (Typer + Rich) | ✅ Done | `emergo run/demo/viz/health/checkpoint`; env-var config layering |
+| Persistence / checkpointing | ✅ Done | `SqliteStore` (WAL), `PickleStore`, `CheckpointKernelObserver`, `emergo checkpoint` |
+| Parallel kernel execution | ✅ Done | `run_parallel_kernels` over `multiprocessing.Pool`; `emergo run --workers N` |
+| Alerting | ✅ Done | `AlertManager` + 4 built-in rules; per-rule cooldown |
+| Structured logging | ✅ Done | `JsonFormatter` ISO-8601 JSON records; `configure_structured_logging` |
+| Rate limiting | ✅ Done | `RateLimitedLuxBridge` — per-agent token bucket + blast-radius cap |
+| Sparse graph support | ✅ Done | Optional scipy sparse adjacency; `is_sparse_beneficial`, `estimate_memory_bytes` |
+| Authority-collapse fix | ✅ Done | Dual-channel `ErrorScales` normalization; 100% CE acceptance on fully-connected graphs |
+| Governance guards | ✅ Done | `remove_agent` protects high-authority agents; `add_agent` enforces max-agents cap |
+| Windowed φ history | 🔲 Planned | Cap `g_history` length to prevent O(T²) phi_update cost at scale |
 | Async kernel | 🔲 Planned | Non-blocking `emergo_kernel_async` for integration with async frameworks |
 | Real Lux bindings | 🔲 Planned | Production `RealLuxBridge` for managed Lux infrastructure |
-| Prometheus integration | 🔲 Planned | First-class `MetricsObserver.enable_prometheus()` export |
-| Package release | ✅ Done | PyPI-ready pyproject.toml, CHANGELOG, 0.2.0 release |
+| Package release | ✅ Done | PyPI-ready pyproject.toml, CHANGELOG, v0.3.0 |
 
 ---
 

@@ -143,6 +143,7 @@ class Errors:
     """Per-agent L2 prediction errors from one iteration."""
 
     per_agent: dict[str, float]  # agent_id → error magnitude ≥ 0
+    proposer_id: str | None = None  # agent that received the global phi-prediction error
 
     def max_error(self) -> float:
         return max(self.per_agent.values()) if self.per_agent else 0.0
@@ -151,6 +152,45 @@ class Errors:
         if not self.per_agent:
             return 0.0
         return sum(self.per_agent.values()) / len(self.per_agent)
+
+
+@dataclass(frozen=True)
+class ErrorScales:
+    """Running EMA scale estimates for the two error channels.
+
+    Kept separate so global phi-prediction error and local structural
+    delta error are each normalized against their own history,
+    preventing the channel with larger magnitude from always dominating.
+
+    Attributes:
+        global_scale: EMA of proposer (global phi-prediction) errors.
+        local_scale:  EMA of participant (local structural delta) errors.
+        alpha:        EMA decay — higher = faster adaptation to recent errors.
+    """
+
+    global_scale: float = 1.0
+    local_scale: float = 1.0
+    alpha: float = 0.1
+
+    def update(self, global_errors: list[float], local_errors: list[float]) -> ErrorScales:
+        """Return new ErrorScales updated from this iteration's observations.
+
+        Only updates a channel if it received at least one observation.
+        Scale floor of 1e-6 prevents division by zero in authority_update.
+        """
+        new_global = self.global_scale
+        new_local = self.local_scale
+        if global_errors:
+            obs_global = float(np.mean(global_errors))
+            new_global = self.alpha * obs_global + (1.0 - self.alpha) * self.global_scale
+        if local_errors:
+            obs_local = float(np.mean(local_errors))
+            new_local = self.alpha * obs_local + (1.0 - self.alpha) * self.local_scale
+        return ErrorScales(
+            global_scale=max(new_global, 1e-6),
+            local_scale=max(new_local, 1e-6),
+            alpha=self.alpha,
+        )
 
 
 # The complete mutable state of the system.  All four components are written

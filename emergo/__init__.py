@@ -140,6 +140,7 @@ from emergo.types import (
     Authority,
     CoordinationEvent,
     Errors,
+    ErrorScales,
     Goal,
     Graph,
     PhiMap,
@@ -160,6 +161,7 @@ __all__ = [  # noqa: RUF022
     "DefaultProposalGenerator",
     "DependencyPlanner",
     "DetectorResult",
+    "ErrorScales",
     "Errors",
     "ExecutionResult",
     # executor

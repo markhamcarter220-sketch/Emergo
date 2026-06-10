@@ -77,6 +77,7 @@ class TestErrorComputation:
         errors = error_computation(three_agent_graph, G_next, phi, ce)
         proposer = ce.participants[0]
         assert errors.per_agent[proposer] == pytest.approx(expected_global, abs=1e-9)
+        assert errors.proposer_id == proposer
 
     def test_participant_gets_local_structural_error(self, three_agent_graph, phi, lux):
         """Non-proposing participant error equals adjacency delta norm."""
@@ -109,3 +110,13 @@ class TestErrorComputation:
         participant_err = errors.per_agent["B"]
         # Global φ-error differs from local structural delta
         assert proposer_err != pytest.approx(participant_err, abs=1e-9)
+
+    def test_proposer_id_is_none_on_empty_participants(self, three_agent_graph, phi):
+        ce = CoordinationEvent(event_type="add_edge", participants=(), params=frozenset())
+        errors = error_computation(three_agent_graph, three_agent_graph, phi, ce)
+        assert errors.proposer_id is None
+
+    def test_proposer_id_set_for_single_participant(self, three_agent_graph, phi):
+        ce = make_ce("add_edge", ("A", "B"), weight=0.5)
+        errors = error_computation(three_agent_graph, three_agent_graph, phi, ce)
+        assert errors.proposer_id == "A"

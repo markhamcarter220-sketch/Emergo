@@ -62,4 +62,4 @@ def error_computation(
         else:
             per_agent[agent_id] = _agent_local_error(G_t, G_next, agent_id)
 
-    return Errors(per_agent=per_agent)
+    return Errors(per_agent=per_agent, proposer_id=proposer)

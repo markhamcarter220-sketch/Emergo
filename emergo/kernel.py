@@ -10,6 +10,7 @@ shared mutable state, no race conditions.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -21,7 +22,9 @@ from emergo.lux import Lux
 from emergo.observer import fire_observers
 from emergo.phi_update import phi_update
 from emergo.proposal import DefaultProposalGenerator, ProposalGenerator
-from emergo.types import Authority, CoordinationEvent, Errors, Graph, PhiMap, State
+from emergo.types import Authority, CoordinationEvent, Errors, ErrorScales, Graph, PhiMap, State
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from emergo.diagnostics import KernelDiagnostics
@@ -127,10 +130,10 @@ def emergo_kernel(
 
     state = initial_state
 
-    # EMA error scale for authority normalization (Critical 1.1).
-    # alpha=0.01 gives a ~100-step window; None until first accepted CE.
-    _EMA_ALPHA: float = 0.01
-    _error_ema: float | None = None
+    # Dual-channel EMA scales for authority normalization.
+    # global_scale tracks proposer (phi-prediction) errors;
+    # local_scale tracks participant (structural delta) errors.
+    err_scales = ErrorScales()
 
     # Phi-loss history for convergence signal 2 (Critical 1.3).
     _phi_losses: list[float] = []
@@ -177,15 +180,29 @@ def emergo_kernel(
         # Step 2: ErrorComputation — pure function over current φ
         errors = error_computation(G_t, G_next, phi_t, CE_t)
 
-        # Update EMA error scale before authority update (Critical 1.1).
-        cur_mean = errors.mean_error()
-        if _error_ema is None:
-            _error_ema = cur_mean
-        else:
-            _error_ema = (1.0 - _EMA_ALPHA) * _error_ema + _EMA_ALPHA * cur_mean
+        # Step 3: AuthorityUpdate — deterministic from errors and per-channel scales
+        A_next = authority_update(A_t, errors, err_scales)
 
-        # Step 3: AuthorityUpdate — deterministic from errors
-        A_next = authority_update(A_t, errors, error_scale=_error_ema)
+        # Update per-channel EMA scales after authority_update (prevents look-ahead bias).
+        # Multiply by 2 so scale ≈ 2*mean_error: at typical performance,
+        # correctness = 1 - err/(2*mean_err) = 0.5 = baseline → neutral delta.
+        # Without this, scale → mean_error and everyone always gets correctness=0.
+        _scale_factor = 2.0
+        global_errs = (
+            [errors.per_agent[errors.proposer_id] * _scale_factor]
+            if errors.proposer_id and errors.proposer_id in errors.per_agent
+            else []
+        )
+        local_errs = [
+            v * _scale_factor for aid, v in errors.per_agent.items() if aid != errors.proposer_id
+        ]
+        err_scales = err_scales.update(global_errs, local_errs)
+        logger.debug(
+            "iter %d: err_scales global=%.4f local=%.4f",
+            t,
+            err_scales.global_scale,
+            err_scales.local_scale,
+        )
 
         # Accumulate history for φ fitting
         g_history.append(G_next)

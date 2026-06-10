@@ -71,7 +71,7 @@ class TestAuthorityStability:
         assert var < 1.0  # max possible variance in [0,1] is 0.25
 
     def test_no_total_authority_collapse(self):
-        """After 300 iterations at least one agent must have authority > 0.05."""
+        """After 300 iterations the majority of agents must remain above the floor."""
         state = _pentagon_state(2)
         final_state, _ = emergo_kernel(
             state,
@@ -79,8 +79,12 @@ class TestAuthorityStability:
             rng=np.random.default_rng(2),
         )
         _, _, A_final, _ = final_state
-        max_auth = max(A_final.get(a) for a in A_final.scores)
-        assert max_auth > 0.05, f"All authority collapsed: max={max_auth}"
+        scores = [A_final.get(a) for a in A_final.scores]
+        above_floor = sum(1 for s in scores if s > 0.12)
+        assert above_floor >= len(scores) // 2, (
+            f"Authority collapse: only {above_floor}/{len(scores)} agents above floor. "
+            f"Scores: {sorted(scores)}"
+        )
 
     def test_authority_differentiates_over_long_run(self):
         """Over 500 iterations, not all agents converge to the same authority."""

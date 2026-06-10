@@ -213,12 +213,13 @@ class TestConsistency2Stability:
 
         result = authority_update(A, errors, eta=eta)
 
-        # Compute expected values analytically using A_t (not A_next)
-        max_err = errors.max_error()  # 0.8
-        corr_A = 1.0 - 0.2 / max_err  # 0.75
-        corr_B = 1.0 - 0.8 / max_err  # 0.0
-        expected_A = float(np.clip(0.4 + eta * (corr_A - 0.5), 0.0, 1.0))
-        expected_B = float(np.clip(0.7 + eta * (corr_B - 0.5), 0.0, 1.0))
+        # Compute expected values analytically using A_t (not A_next).
+        # Default ErrorScales() uses local_scale=1.0 (both agents, no proposer_id set).
+        scale = 1.0  # default local_scale
+        corr_A = 1.0 - float(np.clip(0.2 / scale, 0.0, 1.0))  # 0.8
+        corr_B = 1.0 - float(np.clip(0.8 / scale, 0.0, 1.0))  # 0.2
+        expected_A = float(np.clip(0.4 + eta * (corr_A - 0.5), 0.0, 0.8))
+        expected_B = float(np.clip(0.7 + eta * (corr_B - 0.5), 0.0, 0.8))
 
         assert result.get("A") == pytest.approx(expected_A, abs=1e-9)
         assert result.get("B") == pytest.approx(expected_B, abs=1e-9)

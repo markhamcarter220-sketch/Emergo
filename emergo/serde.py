@@ -64,16 +64,16 @@ def save_checkpoint(
 
     G, phi, A, error_history = state
 
-    arrays: dict[str, np.ndarray] = {
-        "graph_adjacency": G.adjacency,
-        "graph_capabilities": G.capabilities,
-        "phi_W_phi": phi.W_phi,
-        "phi_b_phi": phi.b_phi,
-        "phi_W_F": phi.W_F,
-        "phi_b_F": phi.b_F,
-    }
     npz_path = directory / "emergo_state.npz"
-    np.savez_compressed(npz_path, **arrays)
+    np.savez_compressed(
+        npz_path,
+        graph_adjacency=G.adjacency,
+        graph_capabilities=G.capabilities,
+        phi_W_phi=phi.W_phi,
+        phi_b_phi=phi.b_phi,
+        phi_W_F=phi.W_F,
+        phi_b_F=phi.b_F,
+    )
     logger.debug("save_checkpoint: arrays written to %s", npz_path)
 
     error_history_data = [

@@ -213,6 +213,21 @@ def main() -> None:
     )
     _ablation_chart(data, os.path.join(args.out_dir, "ablation_comparison.png"))
 
+    # T6 hub_fitness chart (only if T6 task present in results)
+    t6_tasks = [t for t in data["meta"]["tasks"] if t.get("n_privileged", 0) > 0]
+    if t6_tasks:
+        hub_data = _collect(data, "topology_fitness")
+        t6_hub = {k: v for k, v in hub_data.items() if k in {t["name"] for t in t6_tasks}}
+        if t6_hub:
+            _bar_chart(
+                t6_hub,
+                "topology_fitness",
+                "Hub Fitness (fraction of target hub edges)",
+                "T6 Outcome Metric: Hub Fitness by System\n"
+                "(signal agents have caps[0]=0.8; authority determines who builds hub)",
+                os.path.join(args.out_dir, "t6_hub_fitness.png"),
+            )
+
 
 if __name__ == "__main__":
     main()

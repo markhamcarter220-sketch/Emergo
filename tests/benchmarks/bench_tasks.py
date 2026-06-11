@@ -79,6 +79,8 @@ class Task:
     horizon: int
     edge_density: float
     hypothesis: str  # stated before results; cannot be edited after the run
+    n_privileged: int = 0      # T6: number of signal agents (0 = standard task)
+    n_seeds_override: int = 0  # T6: override global N_SEEDS if > 0
 
 
 TASKS: list[Task] = [
@@ -145,6 +147,30 @@ TASKS: list[Task] = [
             "FixedHierarchy is smaller than at larger n."
         ),
     ),
+    Task(
+        name="T6_outcome_sensitive",
+        n_agents=10,
+        horizon=1500,
+        edge_density=0.15,
+        n_privileged=3,
+        n_seeds_override=5,
+        hypothesis=(
+            "Outcome-sensitive authority task. 3 of 10 agents are randomly designated "
+            "'signal' agents (caps[0]=0.8; the other 7 have caps[0]=0.1). "
+            "Signal agents build hub edges (add outgoing edges from themselves, prob 0.80); "
+            "noise agents preferentially remove hub edges (prob 0.28 per step). "
+            "Authority controls who proposes CEs; hub_fitness = fraction of signal-agent "
+            "outgoing edges present at end. "
+            "FixedHierarchy acts as control: rank-by-index only accidentally aligns with "
+            "randomly placed signal agents → high variance. "
+            "PerfMetric should learn to favor signal agents (hub proposals are accepted). "
+            "Emergo's outcome is uncertain: the dual-channel mechanism may be hurt by an "
+            "adversarial CE attribution problem — noise agents remove hub edge A→B via "
+            "CE(participants=(A,B)), which makes signal agent A appear as CE.participants[0] "
+            "(proposer), causing Emergo to REDUCE signal agent authority. This is a genuine "
+            "Emergo limitation in adversarial settings and is honestly reported."
+        ),
+    ),
 ]
 
 N_SEEDS: int = 3
@@ -168,7 +194,18 @@ def make_initial_state(task: Task, rng: np.random.Generator) -> State:
                 w = float(rng.uniform(0.1, 1.0))
                 adj[i, j] = w
                 adj[j, i] = w
-    caps = np.ones((n, 2), dtype=float) * 0.5
+    if task.n_privileged > 0:
+        # T6: heterogeneous capabilities — some agents are high-quality signal agents
+        # The privileged indices are randomly chosen and embedded in caps[i,0].
+        # Runners never receive the index list; they observe only caps[i,0] values.
+        caps = np.zeros((n, 2), dtype=float)
+        caps[:, 0] = 0.1  # baseline noise-agent signal
+        caps[:, 1] = rng.uniform(0.0, 0.2, size=n)  # noise dimension
+        privileged = rng.choice(n, size=task.n_privileged, replace=False)
+        for idx in privileged:
+            caps[idx, 0] = 0.8  # high-quality signal agent
+    else:
+        caps = np.ones((n, 2), dtype=float) * 0.5
     G = Graph(agent_ids=agent_ids, adjacency=adj, capabilities=caps)
     phi = make_initial_phi(d_latent=4, d_features=16, d_ce=4)
     A = make_initial_authority(agent_ids)
@@ -221,6 +258,7 @@ class RunResult:
     phi_loss_reduction_pct: float = 0.0
     error_reduction_pct_: float = 0.0
     wall_seconds: float = 0.0
+    topology_fitness: float = 0.0  # T6 only: fraction of target hub edges present
 
     @property
     def acceptance_rate(self) -> float:
@@ -262,6 +300,133 @@ def _broadcast_error(
 
 
 # ---------------------------------------------------------------------------
+# T6 proposal generator and hub-fitness metric
+# ---------------------------------------------------------------------------
+
+_HUB_CAP_THRESHOLD: float = 0.5   # caps[i,0] > this → signal agent
+_HUB_PROPOSAL_PROB: float = 0.80  # signal agent: P(propose hub CE)
+_NOISE_REMOVE_PROB: float = 0.28  # noise agent:  P(remove a hub edge)
+
+
+class T6HubBuildingGenerator:
+    """Capability-aware proposal generator for T6_outcome_sensitive.
+
+    Signal agents (caps[0] > 0.5) are biased toward adding outgoing hub edges.
+    Noise agents (caps[0] ≤ 0.5) are biased toward removing existing edges.
+    Authority determines WHO proposes; capabilities determine WHAT is proposed.
+    All five systems use this generator for T6, so the ONLY variable is
+    the authority distribution each system produces.
+
+    No ground-truth leakage: caps[0] is an observable feature, not a
+    harness-internal label passed to any runner.
+    """
+
+    def propose(
+        self,
+        A_t: Authority,
+        G_t: Graph,
+        rng: np.random.Generator,
+    ) -> CoordinationEvent | None:
+        if G_t.n_agents < 2:
+            return None
+
+        agents = list(G_t.agent_ids)
+        auth_vec = np.array([A_t.get(a) for a in agents])
+        shifted = auth_vec - auth_vec.max()
+        weights = np.exp(shifted)
+        weights /= weights.sum()
+
+        proposer_idx = int(rng.choice(len(agents), p=weights))
+        proposer = agents[proposer_idx]
+        quality = float(G_t.capabilities[proposer_idx, 0])
+
+        if quality > _HUB_CAP_THRESHOLD and rng.random() < _HUB_PROPOSAL_PROB:
+            # Signal agent: add outgoing hub edge (hub-building)
+            free_slots = [
+                j for j in range(G_t.n_agents)
+                if j != proposer_idx and G_t.adjacency[proposer_idx, j] == 0.0
+            ]
+            if free_slots:
+                target_idx = int(rng.choice(free_slots))
+                return CoordinationEvent(
+                    event_type="add_edge",
+                    participants=(proposer, agents[target_idx]),
+                    params=frozenset([("weight", float(rng.uniform(0.5, 1.0)))]),
+                )
+
+        if quality <= _HUB_CAP_THRESHOLD and rng.random() < _NOISE_REMOVE_PROB:
+            # Noise agent: preferentially remove hub edges (signal-agent outgoing edges).
+            # This creates direct competition with signal agents' hub-building.
+            # The target selection uses caps[i,0] — visible to all runners, no leakage.
+            hub_edges = [
+                (i, j)
+                for i in range(G_t.n_agents)
+                for j in range(G_t.n_agents)
+                if G_t.adjacency[i, j] > 0.0 and G_t.capabilities[i, 0] > _HUB_CAP_THRESHOLD
+            ]
+            fallback_edges = [
+                (i, j)
+                for i in range(G_t.n_agents)
+                for j in range(G_t.n_agents)
+                if G_t.adjacency[i, j] > 0.0
+            ]
+            target_edges = hub_edges if hub_edges else fallback_edges
+            if target_edges:
+                e_pick = int(rng.choice(len(target_edges)))
+                i_idx, j_idx = target_edges[e_pick]
+                return CoordinationEvent(
+                    event_type="remove_edge",
+                    participants=(agents[i_idx], agents[j_idx]),
+                    params=frozenset(),
+                )
+
+        # Fallback: standard edge-flip logic
+        candidates = [i for i in range(G_t.n_agents) if i != proposer_idx]
+        to_idx = int(rng.choice(candidates))
+        to_agent = agents[to_idx]
+        i = G_t.agent_index(proposer)
+        j = G_t.agent_index(to_agent)
+        if G_t.adjacency[i, j] == 0.0:
+            return CoordinationEvent(
+                event_type="add_edge",
+                participants=(proposer, to_agent),
+                params=frozenset([("weight", float(auth_vec[proposer_idx]))]),
+            )
+        return CoordinationEvent(
+            event_type="remove_edge",
+            participants=(proposer, to_agent),
+            params=frozenset(),
+        )
+
+
+def compute_hub_fitness(G: Graph) -> float:
+    """Fraction of signal-agent outgoing edges present (T6 outcome metric).
+
+    Signal agents are identified by caps[i, 0] > _HUB_CAP_THRESHOLD.
+    This is computable from the final graph without any harness-internal labels.
+    Returns 0.0 if there are no signal agents.
+    """
+    n = G.n_agents
+    target = 0
+    present = 0
+    for i in range(n):
+        if G.capabilities[i, 0] > _HUB_CAP_THRESHOLD:
+            for j in range(n):
+                if j != i:
+                    target += 1
+                    if G.adjacency[i, j] > 0.0:
+                        present += 1
+    return present / target if target > 0 else 0.0
+
+
+def _pick_proposal_gen(task: Task):
+    """Return an instantiated proposal generator appropriate for the task."""
+    if task.n_privileged > 0:
+        return T6HubBuildingGenerator()
+    return DefaultProposalGenerator()
+
+
+# ---------------------------------------------------------------------------
 # Vanilla runner
 # ---------------------------------------------------------------------------
 
@@ -275,7 +440,7 @@ def run_vanilla(task: Task, initial_state: State, seed: int) -> RunResult:
     rng = np.random.default_rng(seed)
     G, phi, A, E = copy.deepcopy(initial_state)
     lux = Lux()
-    gen = DefaultProposalGenerator()
+    gen = _pick_proposal_gen(task)
     t0 = time.monotonic()
 
     for step in range(task.horizon):
@@ -302,6 +467,8 @@ def run_vanilla(task: Task, initial_state: State, seed: int) -> RunResult:
     result.final_authority_gini = gini_coefficient(final_scores)
     result.final_authority_std = float(np.std(final_scores)) if final_scores else 0.0
     result.error_reduction_pct_ = error_reduction_pct(result.mean_errors)
+    if task.n_privileged > 0:
+        result.topology_fitness = compute_hub_fitness(G)
     return result
 
 
@@ -319,7 +486,7 @@ def run_fixed_hierarchy(task: Task, initial_state: State, seed: int) -> RunResul
     rng = np.random.default_rng(seed)
     G, phi, A, E = copy.deepcopy(initial_state)
     lux = Lux()
-    gen = DefaultProposalGenerator()
+    gen = _pick_proposal_gen(task)
 
     n = task.n_agents
     for i, aid in enumerate(G.agent_ids):
@@ -350,6 +517,8 @@ def run_fixed_hierarchy(task: Task, initial_state: State, seed: int) -> RunResul
     result.final_authority_gini = gini_coefficient(final_scores)
     result.final_authority_std = float(np.std(final_scores)) if final_scores else 0.0
     result.error_reduction_pct_ = error_reduction_pct(result.mean_errors)
+    if task.n_privileged > 0:
+        result.topology_fitness = compute_hub_fitness(G)
     return result
 
 
@@ -367,7 +536,7 @@ def run_performance_metric(task: Task, initial_state: State, seed: int) -> RunRe
     rng = np.random.default_rng(seed)
     G, phi, A, E = copy.deepcopy(initial_state)
     lux = Lux()
-    gen = DefaultProposalGenerator()
+    gen = _pick_proposal_gen(task)
     t0 = time.monotonic()
 
     for step in range(task.horizon):
@@ -400,6 +569,8 @@ def run_performance_metric(task: Task, initial_state: State, seed: int) -> RunRe
     result.final_authority_gini = gini_coefficient(final_scores)
     result.final_authority_std = float(np.std(final_scores)) if final_scores else 0.0
     result.error_reduction_pct_ = error_reduction_pct(result.mean_errors)
+    if task.n_privileged > 0:
+        result.topology_fitness = compute_hub_fitness(G)
     return result
 
 
@@ -427,7 +598,7 @@ def run_phi_learning(task: Task, initial_state: State, seed: int) -> RunResult:
     rng = np.random.default_rng(seed)
     G, phi, A, E = copy.deepcopy(initial_state)
     lux = Lux()
-    gen = DefaultProposalGenerator()
+    gen = _pick_proposal_gen(task)
 
     g_history: list[Graph] = [G]
     ce_history: list[CoordinationEvent] = []
@@ -490,6 +661,8 @@ def run_phi_learning(task: Task, initial_state: State, seed: int) -> RunResult:
     result.final_authority_gini = gini_coefficient(final_scores)
     result.final_authority_std = float(np.std(final_scores)) if final_scores else 0.0
     result.error_reduction_pct_ = error_reduction_pct(result.mean_errors)
+    if task.n_privileged > 0:
+        result.topology_fitness = compute_hub_fitness(G)
     return result
 
 
@@ -517,6 +690,7 @@ def run_emergo(task: Task, initial_state: State, seed: int) -> RunResult:
         phi_early_stop_patience=3,
         phi_force_adapt_interval=50,
         observers=[obs],
+        proposal_generator=_pick_proposal_gen(task) if task.n_privileged > 0 else None,
     )
     result.wall_seconds = time.monotonic() - t0
 
@@ -538,11 +712,13 @@ def run_emergo(task: Task, initial_state: State, seed: int) -> RunResult:
             (first - last) / first * 100.0 if first > 1e-12 else 0.0
         )
 
-    _, _, A_final, _ = final_state
+    G_final, _, A_final, _ = final_state
     final_scores = list(A_final.scores.values())
     result.final_authority_gini = gini_coefficient(final_scores)
     result.final_authority_std = float(np.std(final_scores)) if final_scores else 0.0
     result.error_reduction_pct_ = error_reduction_pct(result.mean_errors)
+    if task.n_privileged > 0:
+        result.topology_fitness = compute_hub_fitness(G_final)
     return result
 
 
@@ -585,6 +761,8 @@ class TaskModeSummary:
     mean_auth_std: float = 0.0
     mean_topo_events: float = 0.0
     mean_wall_s: float = 0.0
+    mean_hub_fitness: float = 0.0
+    std_hub_fitness: float = 0.0
     entanglement_onsets: list[int | None] = field(default_factory=list)
 
 
@@ -606,6 +784,8 @@ def _summarize(runs: list[RunResult]) -> TaskModeSummary:
         mean_auth_std=_m([r.final_authority_std for r in runs]),
         mean_topo_events=_m([float(r.topology_events) for r in runs]),
         mean_wall_s=_m([r.wall_seconds for r in runs]),
+        mean_hub_fitness=_m([r.topology_fitness for r in runs]),
+        std_hub_fitness=_sd([r.topology_fitness for r in runs]),
         entanglement_onsets=[r.entanglement_onset for r in runs],
     )
 
@@ -625,19 +805,25 @@ def run_benchmarks(
     for task in tasks:
         results[task.name] = {m: [] for m, _ in _RUNNERS}
 
-    total = len(tasks) * n_seeds * len(_RUNNERS)
+    # Account for per-task seed overrides in the total count
+    total = sum(
+        (task.n_seeds_override if task.n_seeds_override > 0 else n_seeds) * len(_RUNNERS)
+        for task in tasks
+    )
     done = 0
 
     for task in tasks:
-        for seed in range(n_seeds):
+        task_seeds = task.n_seeds_override if task.n_seeds_override > 0 else n_seeds
+        for seed in range(task_seeds):
             rng = np.random.default_rng(seed * 1000 + task.n_agents + hash(task.name) % 997)
             initial_state = make_initial_state(task, rng)
 
             for mode, runner in _RUNNERS:
                 done += 1
                 if verbose:
+                    hub_tag = ""
                     print(
-                        f"  [{done}/{total}] {task.name:20s} {mode:18s} seed={seed} ...",
+                        f"  [{done}/{total}] {task.name:24s} {mode:18s} seed={seed} ...",
                         end=" ",
                         flush=True,
                         file=sys.stderr,
@@ -645,10 +831,12 @@ def run_benchmarks(
                 r = runner(task, initial_state, seed)
                 results[task.name][mode].append(r)
                 if verbose:
+                    hub_tag = f" hub={r.topology_fitness:.3f}" if task.n_privileged > 0 else ""
                     print(
                         f"φ-loss={r.phi_loss_reduction_pct:.1f}%"
                         f" gini={r.final_authority_gini:.3f}"
-                        f" wall={r.wall_seconds:.2f}s",
+                        f" wall={r.wall_seconds:.2f}s"
+                        f"{hub_tag}",
                         file=sys.stderr,
                     )
 
@@ -758,6 +946,24 @@ def generate_results_md(
             )
         lines += [""]
 
+        # T6-specific outcome table
+        if task.n_privileged > 0:
+            lines += [
+                "#### Hub Fitness (T6 primary outcome metric)",
+                "",
+                "Fraction of signal-agent outgoing edges present at end of run.",
+                "Signal agents = those with caps[0] > 0.5 (assigned randomly per seed).",
+                "",
+                "| Mode | Mean Hub Fitness | Std |",
+                "| --- | :---: | :---: |",
+            ]
+            for mode, _ in _RUNNERS:
+                s = sums[mode]
+                lines.append(
+                    f"| {_MODE_LABELS[mode]} | {s.mean_hub_fitness:.4f} | {s.std_hub_fitness:.4f} |"
+                )
+            lines += [""]
+
         # Authority + compute table
         lines += [
             "#### Authority & Compute",
@@ -792,14 +998,16 @@ def generate_results_md(
         lines += [""]
 
         # Per-seed raw data
-        lines += [
-            "<details><summary>Per-seed raw data</summary>",
-            "",
-            "| seed | mode | φ-loss% | accept% | gini | auth_std | topo | wall(s) |",
-            "| ---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |",
-        ]
+        if task.n_privileged > 0:
+            hdr = "| seed | mode | φ-loss% | accept% | gini | auth_std | topo | hub_fit | wall(s) |"
+            sep = "| ---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |"
+        else:
+            hdr = "| seed | mode | φ-loss% | accept% | gini | auth_std | topo | wall(s) |"
+            sep = "| ---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |"
+        lines += ["<details><summary>Per-seed raw data</summary>", "", hdr, sep]
         for mode, _ in _RUNNERS:
             for r in results[task.name][mode]:
+                hub_col = f" | {r.topology_fitness:.4f}" if task.n_privileged > 0 else ""
                 lines.append(
                     f"| {r.seed} | {r.mode}"
                     f" | {r.phi_loss_reduction_pct:.1f}%"
@@ -807,6 +1015,7 @@ def generate_results_md(
                     f" | {r.final_authority_gini:.4f}"
                     f" | {r.final_authority_std:.4f}"
                     f" | {r.topology_events}"
+                    f"{hub_col}"
                     f" | {r.wall_seconds:.2f}s |"
                 )
         lines += ["", "</details>", ""]
@@ -947,6 +1156,41 @@ def generate_results_md(
             f"keeps broadcast errors."
         )
 
+    # T6 outcome-sensitivity check: if all systems tie on hub_fitness, design has failed.
+    t6_task = next((t for t in tasks if t.n_privileged > 0), None)
+    if t6_task is not None:
+        t6_sums = task_summaries[t6_task.name]
+        hub_vals = {m: t6_sums[m].mean_hub_fitness for m, _ in _RUNNERS}
+        hub_range = max(hub_vals.values()) - min(hub_vals.values())
+        hub_winner = max(hub_vals, key=hub_vals.__getitem__)
+        hub_loser = min(hub_vals, key=hub_vals.__getitem__)
+        if hub_range < 0.05:
+            emergo_losses.append(
+                f"5. **T6 outcome-sensitivity: ALL systems tied on hub_fitness** "
+                f"(range={hub_range:.4f} < 0.05). "
+                f"This indicates the experimental design did not produce meaningful "
+                f"authority-outcome coupling. The T6 task hypothesis is UNCONFIRMED. "
+                f"Results: {', '.join(f'{_MODE_LABELS[m]}={v:.3f}' for m, v in hub_vals.items())}."
+            )
+        else:
+            # Report who won on T6 hub_fitness (may or may not be Emergo)
+            emergo_hub = hub_vals["emergo"]
+            best_hub = hub_vals[hub_winner]
+            worst_hub = hub_vals[hub_loser]
+            outcome_note = (
+                "Emergo wins on T6 hub_fitness: authority learning concentrates proposals "
+                "on signal agents." if hub_winner == "emergo"
+                else f"{_MODE_LABELS[hub_winner]} wins on T6 hub_fitness "
+                     f"({best_hub:.3f} vs Emergo {emergo_hub:.3f})."
+            )
+            if hub_winner != "emergo" or emergo_hub < 0.60:
+                emergo_losses.append(
+                    f"5. **T6 hub_fitness outcome** ({t6_task.name}): {outcome_note} "
+                    f"Hub fitness range: {_MODE_LABELS[hub_winner]}={best_hub:.3f} "
+                    f"(best) → {_MODE_LABELS[hub_loser]}={worst_hub:.3f} (worst). "
+                    f"Emergo={emergo_hub:.3f}."
+                )
+
     # ASSERTION: "Where Emergo Loses" cannot be empty.
     assert emergo_losses, (
         "BUG in experimental design: 'Where Emergo Loses' section is empty. "
@@ -1034,11 +1278,12 @@ def generate_results_md(
         "```",
         "",
         "Fixed seeds: initial state seed = `seed * 1000 + n_agents + hash(task_name) % 997`. "
-        "Runner seed = `seed` (0, 1, 2). Deterministic given numpy version.",
+        "Runner seed = `seed` (0..N-1). Deterministic given numpy version.",
         "",
         "Full per-seed data and raw metrics are in `bench_results.json` (generated with `--json`).",
         "",
-        f"*Generated over {len(tasks)} tasks × {len(_RUNNERS)} systems × {n_seeds} seeds.*",
+        f"*Generated over {len(tasks)} tasks × {len(_RUNNERS)} systems "
+        f"({n_seeds} seeds for T1-T5; 5 seeds for T6).*",
     ]
 
     return "\n".join(lines)
@@ -1064,6 +1309,7 @@ def to_json(
                     "horizon": t.horizon,
                     "edge_density": t.edge_density,
                     "hypothesis": t.hypothesis,
+                    "n_privileged": t.n_privileged,
                 }
                 for t in tasks
             ],
@@ -1087,6 +1333,7 @@ def to_json(
                     "entanglement_onset": r.entanglement_onset,
                     "wall_seconds": r.wall_seconds,
                     "error_reduction_pct": r.error_reduction_pct_,
+                    "topology_fitness": r.topology_fitness,
                 }
                 for r in results[task.name][mode]
             ]
@@ -1110,9 +1357,13 @@ def main() -> None:
     run_tasks = [t for t in TASKS if t.name in QUICK_TASKS] if args.quick else TASKS
     n_seeds = QUICK_N_SEEDS if args.quick else N_SEEDS
 
+    total_runs = sum(
+        (t.n_seeds_override if t.n_seeds_override > 0 else n_seeds) * len(_RUNNERS)
+        for t in run_tasks
+    )
     print(
-        f"Running: {len(run_tasks)} tasks × {len(_RUNNERS)} systems × {n_seeds} seeds "
-        f"= {len(run_tasks) * len(_RUNNERS) * n_seeds} runs",
+        f"Running: {len(run_tasks)} tasks × {len(_RUNNERS)} systems "
+        f"(seeds vary per task) = {total_runs} runs",
         file=sys.stderr,
     )
 

@@ -45,11 +45,11 @@
 
 | Mode | Accept% | Auth Gini | Auth Std | Topo Events | Wall (s) |
 | --- | :---: | :---: | :---: | :---: | :---: |
-| Vanilla | 100.0% | 0.0000 | 0.0000 | 1500 | 0.64 |
-| FixedHierarchy | 100.0% | 0.2444 | 0.2553 | 1500 | 0.59 |
-| PerfMetric | 100.0% | 0.0000 | 0.0000 | 1500 | 0.60 |
-| PhiLearning† | 100.0% | 0.0000 | 0.0000 | 1500 | 19.47 |
-| Emergo | 100.0% | 0.0285 | 0.0304 | 1463 | 18.63 |
+| Vanilla | 100.0% | 0.0000 | 0.0000 | 1500 | 0.95 |
+| FixedHierarchy | 100.0% | 0.2444 | 0.2553 | 1500 | 0.87 |
+| PerfMetric | 100.0% | 0.0000 | 0.0000 | 1500 | 0.91 |
+| PhiLearning† | 100.0% | 0.0000 | 0.0000 | 1500 | 26.01 |
+| Emergo | 100.0% | 0.0354 | 0.0404 | 1500 | 25.71 |
 
 #### Entanglement Onset (first step where Gini < 0.05)
 
@@ -65,21 +65,21 @@
 
 | seed | mode | φ-loss% | accept% | gini | auth_std | topo | wall(s) |
 | ---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| 0 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.67s |
-| 1 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.63s |
-| 2 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.63s |
-| 0 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.60s |
-| 1 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.59s |
-| 2 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.57s |
-| 0 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.59s |
-| 1 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.62s |
-| 2 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.58s |
-| 0 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 19.36s |
-| 1 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 19.93s |
-| 2 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 19.12s |
-| 0 | emergo | 99.9% | 100.0% | 0.0318 | 0.0339 | 1500 | 19.21s |
-| 1 | emergo | 99.9% | 100.0% | 0.0308 | 0.0312 | 1388 | 17.22s |
-| 2 | emergo | 99.9% | 100.0% | 0.0228 | 0.0261 | 1500 | 19.46s |
+| 0 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 1.00s |
+| 1 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.91s |
+| 2 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.94s |
+| 0 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.87s |
+| 1 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.87s |
+| 2 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.87s |
+| 0 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.95s |
+| 1 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.89s |
+| 2 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.89s |
+| 0 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 25.90s |
+| 1 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 26.11s |
+| 2 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 26.02s |
+| 0 | emergo | 99.9% | 100.0% | 0.0407 | 0.0516 | 1500 | 25.56s |
+| 1 | emergo | 99.9% | 100.0% | 0.0310 | 0.0332 | 1500 | 25.89s |
+| 2 | emergo | 99.9% | 100.0% | 0.0345 | 0.0363 | 1500 | 25.67s |
 
 </details>
 
@@ -96,18 +96,18 @@
 | Vanilla | 0.0% | 0.0 |
 | FixedHierarchy | 0.0% | 0.0 |
 | PerfMetric | 0.0% | 0.0 |
-| PhiLearning† | 0.3% | 0.6 |
-| Emergo | 0.4% | 0.6 |
+| PhiLearning† | 0.3% | 0.2 |
+| Emergo | 0.4% | 0.2 |
 
 #### Authority & Compute
 
 | Mode | Accept% | Auth Gini | Auth Std | Topo Events | Wall (s) |
 | --- | :---: | :---: | :---: | :---: | :---: |
-| Vanilla | 100.0% | 0.0344 | 0.0485 | 60 | 0.03 |
-| FixedHierarchy | 100.0% | 0.2444 | 0.2553 | 60 | 0.02 |
-| PerfMetric | 100.0% | 0.0473 | 0.0729 | 60 | 0.02 |
-| PhiLearning† | 100.0% | 0.0337 | 0.0478 | 60 | 0.12 |
-| Emergo | 100.0% | 0.0344 | 0.0364 | 60 | 0.13 |
+| Vanilla | 100.0% | 0.0343 | 0.0482 | 60 | 0.04 |
+| FixedHierarchy | 100.0% | 0.2444 | 0.2553 | 60 | 0.03 |
+| PerfMetric | 100.0% | 0.0473 | 0.0729 | 60 | 0.03 |
+| PhiLearning† | 100.0% | 0.0335 | 0.0475 | 60 | 0.16 |
+| Emergo | 100.0% | 0.0452 | 0.0463 | 60 | 0.16 |
 
 #### Entanglement Onset (first step where Gini < 0.05)
 
@@ -123,21 +123,21 @@
 
 | seed | mode | φ-loss% | accept% | gini | auth_std | topo | wall(s) |
 | ---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| 0 | vanilla | 0.0% | 100.0% | 0.0304 | 0.0436 | 60 | 0.03s |
-| 1 | vanilla | 0.0% | 100.0% | 0.0478 | 0.0635 | 60 | 0.03s |
-| 2 | vanilla | 0.0% | 100.0% | 0.0250 | 0.0383 | 60 | 0.03s |
-| 0 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 60 | 0.02s |
-| 1 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 60 | 0.02s |
-| 2 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 60 | 0.02s |
-| 0 | performance_metric | 0.0% | 100.0% | 0.0605 | 0.0896 | 60 | 0.02s |
-| 1 | performance_metric | 0.0% | 100.0% | 0.0409 | 0.0568 | 60 | 0.02s |
-| 2 | performance_metric | 0.0% | 100.0% | 0.0404 | 0.0723 | 60 | 0.03s |
-| 0 | phi_learning | 0.0% | 100.0% | 0.0299 | 0.0431 | 60 | 0.12s |
-| 1 | phi_learning | 0.9% | 100.0% | 0.0468 | 0.0624 | 60 | 0.12s |
-| 2 | phi_learning | -0.1% | 100.0% | 0.0244 | 0.0379 | 60 | 0.12s |
-| 0 | emergo | 0.1% | 100.0% | 0.0384 | 0.0405 | 60 | 0.12s |
-| 1 | emergo | 1.0% | 100.0% | 0.0319 | 0.0324 | 60 | 0.13s |
-| 2 | emergo | -0.0% | 100.0% | 0.0329 | 0.0363 | 60 | 0.12s |
+| 0 | vanilla | 0.0% | 100.0% | 0.0307 | 0.0438 | 60 | 0.04s |
+| 1 | vanilla | 0.0% | 100.0% | 0.0478 | 0.0634 | 60 | 0.04s |
+| 2 | vanilla | 0.0% | 100.0% | 0.0244 | 0.0374 | 60 | 0.04s |
+| 0 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 60 | 0.03s |
+| 1 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 60 | 0.04s |
+| 2 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 60 | 0.03s |
+| 0 | performance_metric | 0.0% | 100.0% | 0.0605 | 0.0896 | 60 | 0.03s |
+| 1 | performance_metric | 0.0% | 100.0% | 0.0409 | 0.0568 | 60 | 0.03s |
+| 2 | performance_metric | 0.0% | 100.0% | 0.0404 | 0.0723 | 60 | 0.04s |
+| 0 | phi_learning | 0.1% | 100.0% | 0.0299 | 0.0431 | 60 | 0.16s |
+| 1 | phi_learning | 0.4% | 100.0% | 0.0470 | 0.0626 | 60 | 0.16s |
+| 2 | phi_learning | 0.4% | 100.0% | 0.0237 | 0.0370 | 60 | 0.17s |
+| 0 | emergo | 0.2% | 100.0% | 0.0444 | 0.0456 | 60 | 0.17s |
+| 1 | emergo | 0.5% | 100.0% | 0.0380 | 0.0402 | 60 | 0.16s |
+| 2 | emergo | 0.4% | 100.0% | 0.0533 | 0.0532 | 60 | 0.16s |
 
 </details>
 
@@ -161,11 +161,11 @@
 
 | Mode | Accept% | Auth Gini | Auth Std | Topo Events | Wall (s) |
 | --- | :---: | :---: | :---: | :---: | :---: |
-| Vanilla | 100.0% | 0.0000 | 0.0000 | 1500 | 0.64 |
-| FixedHierarchy | 100.0% | 0.2444 | 0.2553 | 1500 | 0.59 |
-| PerfMetric | 100.0% | 0.0000 | 0.0000 | 1500 | 0.61 |
-| PhiLearning† | 100.0% | 0.0000 | 0.0000 | 1500 | 19.64 |
-| Emergo | 100.0% | 0.0369 | 0.0380 | 1464 | 18.84 |
+| Vanilla | 100.0% | 0.0000 | 0.0000 | 1500 | 0.93 |
+| FixedHierarchy | 100.0% | 0.2444 | 0.2553 | 1500 | 0.85 |
+| PerfMetric | 100.0% | 0.0000 | 0.0000 | 1500 | 0.85 |
+| PhiLearning† | 100.0% | 0.0000 | 0.0000 | 1500 | 25.92 |
+| Emergo | 100.0% | 0.0309 | 0.0332 | 1500 | 25.87 |
 
 #### Entanglement Onset (first step where Gini < 0.05)
 
@@ -181,21 +181,21 @@
 
 | seed | mode | φ-loss% | accept% | gini | auth_std | topo | wall(s) |
 | ---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| 0 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.64s |
-| 1 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.63s |
-| 2 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.64s |
-| 0 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.59s |
-| 1 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.57s |
-| 2 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.59s |
-| 0 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.62s |
-| 1 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.59s |
-| 2 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.61s |
-| 0 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 19.56s |
-| 1 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 19.70s |
-| 2 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 19.65s |
-| 0 | emergo | 99.9% | 100.0% | 0.0284 | 0.0294 | 1391 | 17.10s |
-| 1 | emergo | 99.9% | 100.0% | 0.0339 | 0.0348 | 1500 | 19.57s |
-| 2 | emergo | 99.9% | 100.0% | 0.0484 | 0.0499 | 1500 | 19.86s |
+| 0 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.92s |
+| 1 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.92s |
+| 2 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.93s |
+| 0 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.83s |
+| 1 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.87s |
+| 2 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.85s |
+| 0 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.83s |
+| 1 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.86s |
+| 2 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.86s |
+| 0 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 26.15s |
+| 1 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 26.16s |
+| 2 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 25.47s |
+| 0 | emergo | 99.9% | 100.0% | 0.0244 | 0.0260 | 1500 | 26.00s |
+| 1 | emergo | 99.9% | 100.0% | 0.0315 | 0.0340 | 1500 | 25.86s |
+| 2 | emergo | 99.9% | 100.0% | 0.0367 | 0.0395 | 1500 | 25.75s |
 
 </details>
 
@@ -219,11 +219,11 @@
 
 | Mode | Accept% | Auth Gini | Auth Std | Topo Events | Wall (s) |
 | --- | :---: | :---: | :---: | :---: | :---: |
-| Vanilla | 100.0% | 0.0000 | 0.0000 | 1500 | 0.74 |
-| FixedHierarchy | 100.0% | 0.2333 | 0.2428 | 1500 | 0.70 |
-| PerfMetric | 100.0% | 0.0000 | 0.0000 | 1500 | 0.72 |
-| PhiLearning† | 100.0% | 0.0000 | 0.0000 | 1500 | 21.91 |
-| Emergo | 100.0% | 0.0199 | 0.0195 | 1326 | 17.99 |
+| Vanilla | 100.0% | 0.0000 | 0.0000 | 1500 | 1.10 |
+| FixedHierarchy | 100.0% | 0.2333 | 0.2428 | 1500 | 1.02 |
+| PerfMetric | 100.0% | 0.0000 | 0.0000 | 1500 | 1.04 |
+| PhiLearning† | 100.0% | 0.0000 | 0.0000 | 1500 | 30.54 |
+| Emergo | 100.0% | 0.0204 | 0.0205 | 1464 | 29.30 |
 
 #### Entanglement Onset (first step where Gini < 0.05)
 
@@ -239,21 +239,21 @@
 
 | seed | mode | φ-loss% | accept% | gini | auth_std | topo | wall(s) |
 | ---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| 0 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.73s |
-| 1 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.75s |
-| 2 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.75s |
-| 0 | fixed_hierarchy | 0.0% | 100.0% | 0.2333 | 0.2428 | 1500 | 0.68s |
-| 1 | fixed_hierarchy | 0.0% | 100.0% | 0.2333 | 0.2428 | 1500 | 0.72s |
-| 2 | fixed_hierarchy | 0.0% | 100.0% | 0.2333 | 0.2428 | 1500 | 0.70s |
-| 0 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.69s |
-| 1 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.73s |
-| 2 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.73s |
-| 0 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 21.76s |
-| 1 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 22.18s |
-| 2 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 21.81s |
-| 0 | emergo | 99.9% | 100.0% | 0.0159 | 0.0158 | 1075 | 12.63s |
-| 1 | emergo | 99.9% | 100.0% | 0.0233 | 0.0223 | 1491 | 21.78s |
-| 2 | emergo | 99.9% | 100.0% | 0.0205 | 0.0203 | 1411 | 19.57s |
+| 0 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 1.08s |
+| 1 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 1.08s |
+| 2 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 1.12s |
+| 0 | fixed_hierarchy | 0.0% | 100.0% | 0.2333 | 0.2428 | 1500 | 1.02s |
+| 1 | fixed_hierarchy | 0.0% | 100.0% | 0.2333 | 0.2428 | 1500 | 1.01s |
+| 2 | fixed_hierarchy | 0.0% | 100.0% | 0.2333 | 0.2428 | 1500 | 1.03s |
+| 0 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 1.04s |
+| 1 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 1.03s |
+| 2 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 1.06s |
+| 0 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 29.58s |
+| 1 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 30.77s |
+| 2 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 31.26s |
+| 0 | emergo | 99.9% | 100.0% | 0.0209 | 0.0203 | 1500 | 29.80s |
+| 1 | emergo | 99.9% | 100.0% | 0.0246 | 0.0251 | 1500 | 30.74s |
+| 2 | emergo | 99.9% | 100.0% | 0.0158 | 0.0162 | 1391 | 27.35s |
 
 </details>
 
@@ -271,17 +271,17 @@
 | FixedHierarchy | 0.0% | 0.0 |
 | PerfMetric | 0.0% | 0.0 |
 | PhiLearning† | 99.4% | 0.0 |
-| Emergo | 99.5% | 0.1 |
+| Emergo | 99.4% | 0.2 |
 
 #### Authority & Compute
 
 | Mode | Accept% | Auth Gini | Auth Std | Topo Events | Wall (s) |
 | --- | :---: | :---: | :---: | :---: | :---: |
-| Vanilla | 100.0% | 0.0000 | 0.0000 | 1500 | 0.52 |
-| FixedHierarchy | 100.0% | 0.2963 | 0.3266 | 1500 | 0.47 |
-| PerfMetric | 100.0% | 0.0000 | 0.0000 | 1500 | 0.48 |
-| PhiLearning† | 100.0% | 0.0000 | 0.0000 | 1500 | 15.34 |
-| Emergo | 90.9% | 0.2928 | 0.3001 | 1363 | 15.51 |
+| Vanilla | 100.0% | 0.0000 | 0.0000 | 1500 | 0.75 |
+| FixedHierarchy | 100.0% | 0.2963 | 0.3266 | 1500 | 0.67 |
+| PerfMetric | 100.0% | 0.0000 | 0.0000 | 1500 | 0.69 |
+| PhiLearning† | 100.0% | 0.0000 | 0.0000 | 1500 | 20.08 |
+| Emergo | 86.5% | 0.2923 | 0.2998 | 1298 | 18.96 |
 
 #### Entanglement Onset (first step where Gini < 0.05)
 
@@ -297,21 +297,21 @@
 
 | seed | mode | φ-loss% | accept% | gini | auth_std | topo | wall(s) |
 | ---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| 0 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.50s |
-| 1 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.52s |
-| 2 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.52s |
-| 0 | fixed_hierarchy | 0.0% | 100.0% | 0.2963 | 0.3266 | 1500 | 0.46s |
-| 1 | fixed_hierarchy | 0.0% | 100.0% | 0.2963 | 0.3266 | 1500 | 0.48s |
-| 2 | fixed_hierarchy | 0.0% | 100.0% | 0.2963 | 0.3266 | 1500 | 0.47s |
-| 0 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.47s |
-| 1 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.49s |
-| 2 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.49s |
-| 0 | phi_learning | 99.4% | 100.0% | 0.0000 | 0.0000 | 1500 | 15.20s |
-| 1 | phi_learning | 99.3% | 100.0% | 0.0000 | 0.0000 | 1500 | 15.26s |
-| 2 | phi_learning | 99.3% | 100.0% | 0.0000 | 0.0000 | 1500 | 15.57s |
-| 0 | emergo | 99.4% | 94.2% | 0.2970 | 0.2821 | 1413 | 16.30s |
-| 1 | emergo | 99.5% | 82.7% | 0.3044 | 0.3053 | 1241 | 13.57s |
-| 2 | emergo | 99.5% | 95.7% | 0.2772 | 0.3129 | 1435 | 16.65s |
+| 0 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.75s |
+| 1 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.75s |
+| 2 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.76s |
+| 0 | fixed_hierarchy | 0.0% | 100.0% | 0.2963 | 0.3266 | 1500 | 0.68s |
+| 1 | fixed_hierarchy | 0.0% | 100.0% | 0.2963 | 0.3266 | 1500 | 0.67s |
+| 2 | fixed_hierarchy | 0.0% | 100.0% | 0.2963 | 0.3266 | 1500 | 0.67s |
+| 0 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.70s |
+| 1 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.69s |
+| 2 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.68s |
+| 0 | phi_learning | 99.4% | 100.0% | 0.0000 | 0.0000 | 1500 | 20.62s |
+| 1 | phi_learning | 99.4% | 100.0% | 0.0000 | 0.0000 | 1500 | 19.86s |
+| 2 | phi_learning | 99.4% | 100.0% | 0.0000 | 0.0000 | 1500 | 19.76s |
+| 0 | emergo | 99.4% | 89.5% | 0.2702 | 0.3014 | 1343 | 19.27s |
+| 1 | emergo | 99.2% | 84.1% | 0.3028 | 0.2974 | 1261 | 18.52s |
+| 2 | emergo | 99.6% | 85.9% | 0.3040 | 0.3006 | 1289 | 19.08s |
 
 </details>
 
@@ -338,21 +338,21 @@ Signal agents = those with caps[0] > 0.5 (assigned randomly per seed).
 
 | Mode | Mean Hub Fitness | Std |
 | --- | :---: | :---: |
-| Vanilla | 0.5630 | 0.1468 |
-| FixedHierarchy | 0.4519 | 0.1685 |
-| PerfMetric | 0.5630 | 0.1468 |
-| PhiLearning† | 0.5630 | 0.1468 |
-| Emergo | 0.5407 | 0.1472 |
+| Vanilla | 0.6000 | 0.1623 |
+| FixedHierarchy | 0.5556 | 0.2658 |
+| PerfMetric | 0.6963 | 0.1468 |
+| PhiLearning† | 0.6000 | 0.1623 |
+| Emergo | 0.4296 | 0.2169 |
 
 #### Authority & Compute
 
 | Mode | Accept% | Auth Gini | Auth Std | Topo Events | Wall (s) |
 | --- | :---: | :---: | :---: | :---: | :---: |
-| Vanilla | 100.0% | 0.0000 | 0.0000 | 1500 | 0.98 |
-| FixedHierarchy | 100.0% | 0.2444 | 0.2553 | 1500 | 0.90 |
-| PerfMetric | 100.0% | 0.0000 | 0.0000 | 1500 | 0.93 |
-| PhiLearning† | 100.0% | 0.0000 | 0.0000 | 1500 | 26.37 |
-| Emergo | 100.0% | 0.1293 | 0.1346 | 1500 | 26.48 |
+| Vanilla | 100.0% | 0.0000 | 0.0000 | 1500 | 0.97 |
+| FixedHierarchy | 100.0% | 0.2444 | 0.2553 | 1500 | 0.88 |
+| PerfMetric | 100.0% | 0.0000 | 0.0000 | 1500 | 0.89 |
+| PhiLearning† | 100.0% | 0.0000 | 0.0000 | 1500 | 26.00 |
+| Emergo | 100.0% | 0.1183 | 0.1261 | 1500 | 26.13 |
 
 #### Entanglement Onset (first step where Gini < 0.05)
 
@@ -368,31 +368,31 @@ Signal agents = those with caps[0] > 0.5 (assigned randomly per seed).
 
 | seed | mode | φ-loss% | accept% | gini | auth_std | topo | hub_fit | wall(s) |
 | ---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| 0 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.4815 | 1.03s |
-| 1 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.5556 | 0.97s |
-| 2 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.8148 | 0.95s |
-| 3 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.4444 | 1.01s |
-| 4 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.5185 | 0.95s |
-| 0 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.4074 | 0.96s |
-| 1 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.4074 | 0.86s |
-| 2 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.6667 | 0.89s |
-| 3 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.2222 | 0.88s |
-| 4 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.5556 | 0.89s |
-| 0 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.4815 | 0.96s |
-| 1 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.5556 | 0.89s |
-| 2 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.8148 | 0.90s |
-| 3 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.4444 | 0.94s |
-| 4 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.5185 | 0.93s |
-| 0 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.4815 | 26.69s |
-| 1 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.5556 | 25.80s |
-| 2 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.8148 | 26.81s |
-| 3 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.4444 | 26.09s |
-| 4 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.5185 | 26.46s |
-| 0 | emergo | 99.9% | 100.0% | 0.1441 | 0.1480 | 1500 | 0.6667 | 26.48s |
-| 1 | emergo | 99.9% | 100.0% | 0.1327 | 0.1339 | 1500 | 0.5185 | 26.22s |
-| 2 | emergo | 99.9% | 100.0% | 0.1195 | 0.1213 | 1500 | 0.6296 | 26.61s |
-| 3 | emergo | 99.9% | 100.0% | 0.0989 | 0.1104 | 1500 | 0.5926 | 26.65s |
-| 4 | emergo | 99.9% | 100.0% | 0.1514 | 0.1596 | 1500 | 0.2963 | 26.45s |
+| 0 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.4074 | 0.97s |
+| 1 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.4444 | 0.98s |
+| 2 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.7407 | 0.93s |
+| 3 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.6667 | 1.00s |
+| 4 | vanilla | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.7407 | 0.97s |
+| 0 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.7778 | 0.90s |
+| 1 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.6296 | 0.87s |
+| 2 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.3333 | 0.85s |
+| 3 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.8148 | 0.90s |
+| 4 | fixed_hierarchy | 0.0% | 100.0% | 0.2444 | 0.2553 | 1500 | 0.2222 | 0.88s |
+| 0 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.5556 | 0.90s |
+| 1 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.5185 | 0.89s |
+| 2 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.8148 | 0.87s |
+| 3 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.7778 | 0.91s |
+| 4 | performance_metric | 0.0% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.8148 | 0.90s |
+| 0 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.4074 | 25.99s |
+| 1 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.4444 | 25.97s |
+| 2 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.7407 | 25.94s |
+| 3 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.6667 | 26.15s |
+| 4 | phi_learning | 99.9% | 100.0% | 0.0000 | 0.0000 | 1500 | 0.7407 | 25.95s |
+| 0 | emergo | 99.9% | 100.0% | 0.1287 | 0.1319 | 1500 | 0.4815 | 26.03s |
+| 1 | emergo | 99.9% | 100.0% | 0.1116 | 0.1203 | 1500 | 0.2222 | 25.95s |
+| 2 | emergo | 99.9% | 100.0% | 0.1128 | 0.1225 | 1500 | 0.7778 | 26.57s |
+| 3 | emergo | 99.9% | 100.0% | 0.1276 | 0.1331 | 1500 | 0.2963 | 25.98s |
+| 4 | emergo | 99.9% | 100.0% | 0.1106 | 0.1228 | 1500 | 0.3704 | 26.11s |
 
 </details>
 
@@ -408,44 +408,44 @@ Mean over all seeds for each (task, mode) pair.
 | T2_cold_start | 0.0% | 0.0% | 0.0% | 0.3% | 0.4% |
 | T3_dense | 0.0% | 0.0% | 0.0% | 99.9% | 99.9% |
 | T4_sparse_large | 0.0% | 0.0% | 0.0% | 99.9% | 99.9% |
-| T5_tiny | 0.0% | 0.0% | 0.0% | 99.4% | 99.5% |
+| T5_tiny | 0.0% | 0.0% | 0.0% | 99.4% | 99.4% |
 | T6_outcome_sensitive | 0.0% | 0.0% | 0.0% | 99.9% | 99.9% |
 
 ### Authority Gini Across Tasks
 
 | Task | Vanilla | FixedHierarchy | PerfMetric | PhiLearning† | Emergo |
 | --- | :---: | :---: | :---: | :---: | :---: |
-| T1_standard | 0.0000 | 0.2444 | 0.0000 | 0.0000 | 0.0285 |
-| T2_cold_start | 0.0344 | 0.2444 | 0.0473 | 0.0337 | 0.0344 |
-| T3_dense | 0.0000 | 0.2444 | 0.0000 | 0.0000 | 0.0369 |
-| T4_sparse_large | 0.0000 | 0.2333 | 0.0000 | 0.0000 | 0.0199 |
-| T5_tiny | 0.0000 | 0.2963 | 0.0000 | 0.0000 | 0.2928 |
-| T6_outcome_sensitive | 0.0000 | 0.2444 | 0.0000 | 0.0000 | 0.1293 |
+| T1_standard | 0.0000 | 0.2444 | 0.0000 | 0.0000 | 0.0354 |
+| T2_cold_start | 0.0343 | 0.2444 | 0.0473 | 0.0335 | 0.0452 |
+| T3_dense | 0.0000 | 0.2444 | 0.0000 | 0.0000 | 0.0309 |
+| T4_sparse_large | 0.0000 | 0.2333 | 0.0000 | 0.0000 | 0.0204 |
+| T5_tiny | 0.0000 | 0.2963 | 0.0000 | 0.0000 | 0.2923 |
+| T6_outcome_sensitive | 0.0000 | 0.2444 | 0.0000 | 0.0000 | 0.1183 |
 
 ### Wall Time (s) Across Tasks — Emergo's Compute Cost
 
 | Task | Vanilla | FixedHierarchy | PerfMetric | PhiLearning† | Emergo |
 | --- | :---: | :---: | :---: | :---: | :---: |
-| T1_standard | 0.64 | 0.59 | 0.60 | 19.47 | 18.63 |
-| T2_cold_start | 0.03 | 0.02 | 0.02 | 0.12 | 0.13 |
-| T3_dense | 0.64 | 0.59 | 0.61 | 19.64 | 18.84 |
-| T4_sparse_large | 0.74 | 0.70 | 0.72 | 21.91 | 17.99 |
-| T5_tiny | 0.52 | 0.47 | 0.48 | 15.34 | 15.51 |
-| T6_outcome_sensitive | 0.98 | 0.90 | 0.93 | 26.37 | 26.48 |
+| T1_standard | 0.95 | 0.87 | 0.91 | 26.01 | 25.71 |
+| T2_cold_start | 0.04 | 0.03 | 0.03 | 0.16 | 0.16 |
+| T3_dense | 0.93 | 0.85 | 0.85 | 25.92 | 25.87 |
+| T4_sparse_large | 1.10 | 1.02 | 1.04 | 30.54 | 29.30 |
+| T5_tiny | 0.75 | 0.67 | 0.69 | 20.08 | 18.96 |
+| T6_outcome_sensitive | 0.97 | 0.88 | 0.89 | 26.00 | 26.13 |
 
 ## Where Emergo Loses or Ties
 
 This section is a required deliverable. An empty section would mean the benchmark is not trustworthy — it would indicate only tasks where Emergo wins were included. The items below are drawn directly from the numbers above.
 
-1. **Compute cost (all tasks)**: Emergo is the slowest system in every task. Worst case: T5_tiny where Emergo runs 31.7× slower than the non-learning baselines. This is expected (φ-SGD is the cost driver), but it is a real loss that is not hidden. Cost is O(phi_window × phi_update_interval⁻¹) per run; phi_window=200 bounds growth.
+1. **Compute cost (all tasks)**: Emergo is the slowest system in every task. Worst case: T3_dense where Emergo runs 29.5× slower than the non-learning baselines. This is expected (φ-SGD is the cost driver), but it is a real loss that is not hidden. Cost is O(phi_window × phi_update_interval⁻¹) per run; phi_window=200 bounds growth.
 
-2. **Cold-start regime (T2_cold_start, T=60)**: At T=60 steps, Emergo achieves only 0.4% φ-loss reduction (φ needs ~1000 steps to converge). All baselines are at 0% by definition, so Emergo 'wins' on this metric — but the win is negligible relative to its 5.2× compute overhead. A practitioner running at T=60 gets almost nothing from Emergo's learning engine at significant extra cost.
+2. **Cold-start regime (T2_cold_start, T=60)**: At T=60 steps, Emergo achieves only 0.4% φ-loss reduction (φ needs ~1000 steps to converge). All baselines are at 0% by definition, so Emergo 'wins' on this metric — but the win is negligible relative to its 4.6× compute overhead. A practitioner running at T=60 gets almost nothing from Emergo's learning engine at significant extra cost.
 
-3. **Authority diversity vs FixedHierarchy (T1_standard, T2_cold_start, T3_dense, T4_sparse_large, T5_tiny, T6_outcome_sensitive)**: FixedHierarchy achieves higher authority Gini (mean 0.2512) than Emergo (mean 0.0903) on these tasks. This is by design: FixedHierarchy assigns rank-proportional authority at init (a hard-coded ceiling). Emergo's differentiation is *earned* via prediction accuracy, but 'earned' does not mean 'more diverse than a manually tuned assignment.' This is a genuine limitation of learned vs. prescribed authority.
+3. **Authority diversity vs FixedHierarchy (T1_standard, T2_cold_start, T3_dense, T4_sparse_large, T5_tiny, T6_outcome_sensitive)**: FixedHierarchy achieves higher authority Gini (mean 0.2512) than Emergo (mean 0.0904) on these tasks. This is by design: FixedHierarchy assigns rank-proportional authority at init (a hard-coded ceiling). Emergo's differentiation is *earned* via prediction accuracy, but 'earned' does not mean 'more diverse than a manually tuned assignment.' This is a genuine limitation of learned vs. prescribed authority.
 
-4. **PhiLearning ablation confirms dual-channel is load-bearing**: PhiLearning (φ-learning + broadcast authority) achieves Gini=0.0056 vs Emergo Gini=0.0903 — closer to Vanilla (0.0057) than to Emergo. This means φ-learning alone does not prevent authority collapse. The dual-channel error split is the mechanism that maintains differentiation. Emergo loses to its own ablation on authority differentiation when the ablation keeps broadcast errors.
+4. **PhiLearning ablation confirms dual-channel is load-bearing**: PhiLearning (φ-learning + broadcast authority) achieves Gini=0.0056 vs Emergo Gini=0.0904 — closer to Vanilla (0.0057) than to Emergo. This means φ-learning alone does not prevent authority collapse. The dual-channel error split is the mechanism that maintains differentiation. Emergo loses to its own ablation on authority differentiation when the ablation keeps broadcast errors.
 
-5. **T6 hub_fitness outcome** (T6_outcome_sensitive): Vanilla wins on T6 hub_fitness (0.563 vs Emergo 0.541). Hub fitness range: Vanilla=0.563 (best) → FixedHierarchy=0.452 (worst). Emergo=0.541.
+5. **T6 hub_fitness outcome** (T6_outcome_sensitive): PerfMetric wins on T6 hub_fitness (0.696 vs Emergo 0.430). Hub fitness range: PerfMetric=0.696 (best) → Emergo=0.430 (worst). Emergo=0.430.
 
 ## Ablation Analysis
 
@@ -454,8 +454,8 @@ PhiLearning† uses the same φ-SGD as Emergo but Vanilla's broadcast authority 
 | Metric | Vanilla | PhiLearning† | Emergo | Interpretation |
 | --- | :---: | :---: | :---: | --- |
 | φ-loss reduction % | 0.0% | 83.2% | 83.2% | PhiLearning ≈ Emergo → dual-channel doesn't help φ-learning |
-| Authority Gini | 0.0057 | 0.0056 | 0.0903 | PhiLearning ≈ Vanilla → broadcast authority collapses regardless of φ |
-| Wall time (s) | 0.59 | 17.14 | 16.26 | Both learning systems cost more |
+| Authority Gini | 0.0057 | 0.0056 | 0.0904 | PhiLearning ≈ Vanilla → broadcast authority collapses regardless of φ |
+| Wall time (s) | 0.79 | 21.45 | 21.02 | Both learning systems cost more |
 
 If PhiLearning≈Emergo on φ-loss AND PhiLearning≈Vanilla on Gini, the table confirms: (a) dual-channel error does not help φ learning, and (b) dual-channel error IS what prevents authority collapse. These are the two load-bearing claims of the Emergo paper.
 

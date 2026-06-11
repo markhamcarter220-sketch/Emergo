@@ -1350,26 +1350,105 @@ def main() -> None:
     parser.add_argument("--quick", action="store_true", help="Run T1+T2 only, 2 seeds (~2 min)")
     parser.add_argument("--json", action="store_true", help="Write bench_results.json")
     parser.add_argument(
+        "--tasks", metavar="NAMES", default="",
+        help="Comma-separated task names to run (e.g. T1_standard,T2_cold_start). Default: all.",
+    )
+    parser.add_argument(
+        "--merge", metavar="FILE",
+        help="Merge another bench_results.json into the output before writing RESULTS.md.",
+    )
+    parser.add_argument(
+        "--from-json", metavar="FILE",
+        help="Generate RESULTS.md (and optionally bench_results.json) from an existing JSON "
+             "without running any benchmarks. May be combined with --merge.",
+    )
+    parser.add_argument(
         "--out-dir", default=".", help="Directory for output files (default: repo root)"
     )
     args = parser.parse_args()
 
-    run_tasks = [t for t in TASKS if t.name in QUICK_TASKS] if args.quick else TASKS
     n_seeds = QUICK_N_SEEDS if args.quick else N_SEEDS
 
-    total_runs = sum(
-        (t.n_seeds_override if t.n_seeds_override > 0 else n_seeds) * len(_RUNNERS)
-        for t in run_tasks
-    )
-    print(
-        f"Running: {len(run_tasks)} tasks × {len(_RUNNERS)} systems "
-        f"(seeds vary per task) = {total_runs} runs",
-        file=sys.stderr,
-    )
+    # --from-json: skip running, load existing results instead.
+    if args.from_json:
+        with open(args.from_json) as f:
+            base = json.load(f)
+        results: dict[str, dict[str, list[RunResult]]] = {}
+        for task_name, by_mode in base["results"].items():
+            results[task_name] = {}
+            task_obj = next((t for t in TASKS if t.name == task_name), None)
+            for mode, raw_runs in by_mode.items():
+                results[task_name][mode] = [
+                    RunResult(
+                        task_name=task_name, mode=mode,
+                        seed=r["seed"],
+                        n_agents=task_obj.n_agents if task_obj else 0,
+                        horizon=task_obj.horizon if task_obj else 0,
+                        accepted=r["accepted"], rejected=r["rejected"],
+                        phi_loss_reduction_pct=r["phi_loss_reduction_pct"],
+                        final_authority_gini=r["final_authority_gini"],
+                        final_authority_std=r["final_authority_std"],
+                        wall_seconds=r["wall_seconds"],
+                        topology_fitness=r.get("topology_fitness", 0.0),
+                    )
+                    for r in raw_runs
+                ]
+        run_tasks = [t for t in TASKS if t.name in results]
+        print(f"Loaded {len(run_tasks)} tasks from {args.from_json}", file=sys.stderr)
+    else:
+        if args.quick:
+            run_tasks = [t for t in TASKS if t.name in QUICK_TASKS]
+        elif args.tasks:
+            selected = {s.strip() for s in args.tasks.split(",")}
+            run_tasks = [t for t in TASKS if t.name in selected]
+            if not run_tasks:
+                print(f"Error: no tasks matched {args.tasks!r}. Available: {[t.name for t in TASKS]}", file=sys.stderr)
+                sys.exit(1)
+        else:
+            run_tasks = TASKS
 
-    results = run_benchmarks(run_tasks, n_seeds, verbose=True)
+        total_runs = sum(
+            (t.n_seeds_override if t.n_seeds_override > 0 else n_seeds) * len(_RUNNERS)
+            for t in run_tasks
+        )
+        print(
+            f"Running: {len(run_tasks)} tasks × {len(_RUNNERS)} systems "
+            f"(seeds vary per task) = {total_runs} runs",
+            file=sys.stderr,
+        )
+        results = run_benchmarks(run_tasks, n_seeds, verbose=True)
 
-    results_md = generate_results_md(results, run_tasks, n_seeds)
+    # Merge a previously-generated partial run if requested.
+    if args.merge:
+        with open(args.merge) as f:
+            prev = json.load(f)
+        for task_name, by_mode in prev["results"].items():
+            if task_name not in results:
+                results[task_name] = {m: [] for m, _ in _RUNNERS}
+            for mode, raw_runs in by_mode.items():
+                if not results[task_name][mode]:
+                    task_obj = next((t for t in TASKS if t.name == task_name), None)
+                    results[task_name][mode] = [
+                        RunResult(
+                            task_name=task_name, mode=mode,
+                            seed=r["seed"],
+                            n_agents=task_obj.n_agents if task_obj else 0,
+                            horizon=task_obj.horizon if task_obj else 0,
+                            accepted=r["accepted"], rejected=r["rejected"],
+                            phi_loss_reduction_pct=r["phi_loss_reduction_pct"],
+                            final_authority_gini=r["final_authority_gini"],
+                            final_authority_std=r["final_authority_std"],
+                            wall_seconds=r["wall_seconds"],
+                            topology_fitness=r.get("topology_fitness", 0.0),
+                        )
+                        for r in raw_runs
+                    ]
+        run_tasks = [t for t in TASKS if t.name in results]
+        print(f"Merged tasks from {args.merge}: now have {[t.name for t in run_tasks]}", file=sys.stderr)
+
+    # Regenerate run_tasks list to cover all results (may include merged tasks).
+    all_result_tasks = [t for t in TASKS if t.name in results]
+    results_md = generate_results_md(results, all_result_tasks, n_seeds)
     out_dir = args.out_dir
     os.makedirs(out_dir, exist_ok=True)
     results_path = os.path.join(out_dir, "RESULTS.md")
@@ -1380,7 +1459,7 @@ def main() -> None:
     if args.json:
         json_path = os.path.join(out_dir, "bench_results.json")
         with open(json_path, "w") as f:
-            json.dump(to_json(results, run_tasks, n_seeds), f, indent=2)
+            json.dump(to_json(results, all_result_tasks, n_seeds), f, indent=2)
         print(f"Wrote {json_path}", file=sys.stderr)
 
 
